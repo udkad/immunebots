@@ -3,28 +3,34 @@
 #include <ctime>
 #include <stdio.h>
 #include <iostream>
+#include <fstream>
+#include <string>
 #include <unordered_set>
+
+
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/serialization/vector.hpp>
 
 #include "settings.h"
 #include "helpers.h"
 #include "vmath.h"
 
+#include "ImmunebotsSetup.h"
+#include "View.h"
+#include "AbstractAgent.h"
+#include "Cell.h"
+#include <vector>
+
 using namespace std;
 
-World::World():
+World::World( ImmunebotsSetup* is ):
         modcounter(0),
-        current_epoch(0),
-        idcounter(0),
-        cidcounter(0),
-        FW(conf::WIDTH/conf::CZ),
-        FH(conf::HEIGHT/conf::CZ),
         CLOSED(false),
-        selectedCell(0),
-        inFocusCell(0),
-        docelljitter(false),
-        dobackgroundrefresh(true),
-        cellJitterIteration(0)
+        worldtime(0.0)
 {
+	ibs = is;
+
 	// Setup the world colours from the conf
 	resetCellColours();
 
@@ -32,23 +38,21 @@ World::World():
 	SUSCEPTIBLE_PERCENTAGE   = conf::SUSCEPTIBLE_PERCENTAGE;
 	DEFAULT_NUM_CELLS_TO_ADD = conf::DEFAULT_NUM_CELLS_TO_ADD;
 
-    addRandomBots(conf::NUMBOTS);
-
-    // inititalize food layer
-    for (int x=0;x<FW;x++) {
-        for (int y=0;y<FH;y++) {
-            food[x][y]= 0;
-        }
-    }
-
-    // initialise the patch (infected island) and CellShadow layers
+    // Initialise the patch (infected island) and CellShadow layers
     for (int x=0;x<conf::WIDTH;x++) {
-        for (int y=0;y<conf::HEIGHT;y++) {
-            patch[x][y] = 0;
-            CellShadow[x][y] = 0;
-        }
+    	patch.push_back( vector<bool>(conf::HEIGHT,false) );
+    	CellShadow.push_back( vector<Cell*>(conf::HEIGHT,(Cell*)0) );
     }
 
+    // Clear the patchVector as well
+    patchV.clear();
+
+    // Initialise the boundary box (to very wrong numbers)
+    resetBoundingBox();
+}
+
+World::~World() {
+	cout << "Destroying a world. Bye bye\n";
 }
 
 // Horrible clunky solution: copies all values from Conf to the World colour "store"
@@ -65,241 +69,211 @@ void World::copyColourArray(float wc[], const float cc[]) {
 		wc[i]=cc[i];
 }
 
-// This sets a '1' in the 2D patch array at co-ordinate (x,y) and tells all cells that there is a new patch
+// This sets a 'true' in the 2D patch array at co-ordinate x,y, and inserts a 1d coord into patchV
+// Karen says: I would probably use a map<Pos, bool> for the lot and write my own Position class
 void World::setPatch(int x, int y) {
-	patch[x][y] = 1;
-    vector<Cell*>::const_iterator cit;
-    for ( cit = cells.begin(); cit != cells.end(); ++cit) {
-        //(*cit)->checkClosestPatch(x, y);
-        // For each cell, allow a 1 in patchSize chance of choosing this new patch
-        (*cit)->setNewPatch(x,y,patchVector.size());
-    }
-    // Store this new patch on the patch vector
-    patchVector.push_back( x*conf::WIDTH + y );
+	// We need to maintain two containers
+	// Boundary of canvas exceeded - return! (or risk overruns)
+	if ( x<0 || y<0 || x>conf::WIDTH || y>conf::HEIGHT ) return;
 
-    // Tell View that background has changed and needs to be refreshed
-    dobackgroundrefresh = true;
+	// If there isn't a patch at x,y already, put one there and set the bounding box
+	if (!patch[x][y]) {
+		patchV.push_back( (x-1)*conf::WIDTH + y );
+		patch[x][y] = true;
+		// Check if the bounding box needs resetting
+		checkBoundingBox(x,y);
+	}
+}
+
+void World::resetBoundingBox() {
+	bounding_min = Vector2f(conf::WIDTH,conf::HEIGHT);
+	bounding_max = Vector2f(0,0);
+
+	// Loop through patches
+	for (int p=0; p<patchV.size(); p++) {
+		checkBoundingBox(patchV[p]/conf::WIDTH,patchV[p]%conf::WIDTH);
+	}
+
+	// Loop through cells
+	for (int c=0; c<cells.size(); c++) {
+		checkBoundingBox(cells[c]->pos.x,cells[c]->pos.y);
+	}
+}
+
+void World::checkBoundingBox(int x,int y) {
+	int b = 50;
+	if ( x - b < bounding_min.x ) bounding_min.x = max(0, x-b);
+	if ( y - b < bounding_min.y ) bounding_min.y = max(0, y-b);
+	if ( x + b > bounding_max.x ) bounding_max.x = min(x+b, conf::WIDTH);
+	if ( y + b > bounding_max.y ) bounding_max.y = min(y+b, conf::HEIGHT);
+}
+
+// Overload the above function (single int, converted to an x,y coord)
+void World::setPatch(int i) {
+	int x = int(i/conf::WIDTH);
+	int y = i%conf::WIDTH;
+	return setPatch(x,y);
+}
+
+float World::getWorldTime() {
+	return worldtime;
 }
 
 void World::update() {
 
 	modcounter++;
 
-    //Process periodic events
-    //Age goes up!
-    if (modcounter%100==0) {
-        for (int i=0;i<agents.size();i++) {
-            agents[i].age+= 1;    //agents age...
-        }
-    }
-    if (modcounter%1000==0) writeReport();
+	// In each update cycle, do the following:
+	//  1. Process time
+	//  2. Process events (this may activate agents, introduce new agents, etc)
+	//  3. Set inputs for the active agents list, i.e. provide each active agent with requested information, e.g. nearby agents, time
+	//  4. Process actions for the active agents list, i.e. allow agents to move/update their position, produce offspring, die
+    //  5. Tidy up (remove dead stuff)
+
+    // 1. Process time, including recalculating the timestep
+	// Update the worldtime by timestep seconds
+	// TODO: The Timestep is determined by 1/conf::TIMESTEPS# of the the fastest rate
+	float timestep = 1.0;
+	worldtime += timestep;
+
+	if (modcounter%1000==0) writeReport();
+
     if (modcounter>=10000) {
         modcounter=0;
-        current_epoch++;
-    }
-    if (modcounter%conf::FOODADDFREQ==0) {
-        fx=randi(0,FW);
-        fy=randi(0,FH);
-        food[fx][fy]= conf::FOODMAX;
     }
 
+    // TODO: 2. Process events for this timestep
 
-    /****************\
-     * AGENT UPDATE *
-    \****************/
+    // 3. Give input to every agent
+    setInputs(timestep);
 
-    //give input to every agent. Sets in[] array
-    setInputs();
+    // 4. Read output and process consequences of bots on environment
+    processOutputs(timestep);
 
-    //brains tick. computes in[] -> out[]
-    brainsTick();
+    // 5. Tidy up
+    vector<AbstractAgent*>::iterator iter = agents.begin();
+    while ( iter != agents.end() ) {
 
-    //read output and process consequences of bots on environment. requires out[]
-    processOutputs();
-
-    //process bots: health and deaths
-    for (int i=0;i<agents.size();i++) {
-        float baseloss= 0.0002 + 0.0001*(abs(agents[i].w1) + abs(agents[i].w2))/2;
-        if (agents[i].w1<0.1 && agents[i].w2<0.1) baseloss=0.0001; //hibernation :p
-        baseloss += 0.00005*agents[i].soundmul; //shouting costs energy. just a tiny bit
-
-        if (agents[i].boost) {
-            //boost carries its price, and it's pretty heavy!
-            agents[i].health -= baseloss*conf::BOOSTSIZEMULT*2;
-        } else {
-            agents[i].health -= baseloss;
-        }
-    }
-
-    //remove dead agents.
-
-    vector<Agent>::iterator iter= agents.begin();
-    while (iter != agents.end()) {
-        if (iter->health <=0) {
-            iter= agents.erase(iter);
-        } else {
-            ++iter;
-        }
-    }
-
-    //handle reproduction
-    for (int i=0;i<agents.size();i++) {
-        if (agents[i].repcounter<0 && agents[i].health>0.65) { //agent is healthy and is ready to reproduce
-            //agents[i].health= 0.8; //the agent is left vulnerable and weak, a bit
-            reproduce(i, agents[i].MUTRATE1, agents[i].MUTRATE2); //this adds conf::BABIES new agents to agents[]
-            agents[i].repcounter= agents[i].herbivore*randf(conf::REPRATEH-0.1,conf::REPRATEH+0.1) + (1-agents[i].herbivore)*randf(conf::REPRATEC-0.1,conf::REPRATEC+0.1);
-        }
-    }
-
-    //environment tick
-    for (int x=0;x<FW;x++) {
-        for (int y=0;y<FH;y++) {
-            food[x][y]+= conf::FOODGROWTH; //food grows
-            if (food[x][y]>conf::FOODMAX)food[x][y]=conf::FOODMAX; //cap at conf::FOODMAX
-        }
-    }
-
-    //add new agents, if environment isn't closed
-    if (!CLOSED) {
-        //make sure environment is always populated with at least NUMBOTS bots
-        if (agents.size()<conf::NUMBOTS
-           ) {
-            //add new agent
-            addRandomBots(1);
-        }
-        if (modcounter%200==0) {
-            if (randf(0,1)<0.5)
-                addRandomBots(1); //every now and then add random bots in
-            else
-                addNewByCrossover(); //or by crossover
-        }
-    }
-
-    /***************\
-     * CELL UPDATE *
-    \***************/
-
-    // If cells are in jitter mode, we iterate through each one and update their position
-    if (docelljitter && cellJitterIteration<10 && cellJitterIteration!=-1) {
-    	//cout << "Cell jitter i="<<cellJitterIteration<<"\n";
-    	// Refresh the progress bar (ensure we have it BEFORE the first update
-    	for (int i=0;i<cells.size();i++) {
-
-    		// Is the cell within 2r of the target?
-    		double dx = cells[i]->nearestPatch.x - cells[i]->pos.x;
-    		double dy = cells[i]->nearestPatch.y - cells[i]->pos.y;
-    		double dtarget = pow(dx, 2) + pow(dy, 2);
-    		float a; // angle
-    		float d = 1.0; // distance
-
-    		// Store old position, as later we update the CellShadow with new position
-    		Vector2f oldpos = Vector2f(cells[i]->pos.x, cells[i]->pos.y);
-
-    		if ( dtarget < pow(cells[i]->radius*4,2) ) {
-    			// Within 2r of target: choose random direction and move there
-    			bool isFree = false;
-    			int emergencyStop = 0;
-    			while (!isFree && emergencyStop <10) {
-    				a = randf(0,2*M_PI);
-    				// Check if we can move into spot at angle a, remember the radius!
-    				Cell * oc = CellShadow[ (int)(cells[i]->pos.x+cells[i]->radius*cos(a)) ][ (int)(cells[i]->pos.y+cells[i]->radius*sin(a)) ];
-    				isFree = (oc == 0 || oc == cells[i]);
-    				emergencyStop++;
-    			}
-    			// Too crowded, choose random location on grid and find nearest patch.
-				if (emergencyStop == 10) {
-					cells[i]->pos.x = randf(0, conf::WIDTH);
-					cells[i]->pos.y = randf(0, conf::HEIGHT);
-					cells[i]->setClosestPatch(&patch[0][0]);
-				} else {
-					cells[i]->pos.x += d*cos(a);
-					cells[i]->pos.y += d*sin(a);
-				}
-    		} else {
-    			// Too far away, we can choose one of two strategies:
-    			// 1. Choose a random direction in a limited 10deg angle towards target and head there one step
-    			// 2. Teleport to a random point within 4r of the target
-    			int strategy = 2;
-    			if ( strategy == 1 ) {
-    				// Don't care if we cross paths with anything else (at this point, will care later)
-    				a = atan2(dy,dx) + randf(-0.1*M_PI,0.1*M_PI);
-					// Add a random jitter to this angle.. e.g. randf(-0.1*PI,0.1*PI) for +/-5% jitter
-    	    		cells[i]->pos.x += d*cos(a);
-    	    		cells[i]->pos.y += d*sin(a);
-    			} else if ( strategy == 2 ) {
-    				d = randf(0,cells[i]->radius*3);
-    				a = randf(0,2*M_PI);
-    				cells[i]->pos.x = cells[i]->nearestPatch.x + d*cos(a);
-    				cells[i]->pos.y = cells[i]->nearestPatch.y + d*sin(a);
-    			}
-    		}
-
-    		// Note: Alternative is to use vector maths: cannot fiddle with angle if you do it this way.
-    		// 1 in 10 chance of resetting nearestPatch to a closer target
-    		if ( randf(0,1) < 0.1 ) cells[i]->setClosestPatch(&patch[0][0]);
-    		resetShadowLayer(cells[i], oldpos);
-
-    		// Reset CellShadow for this cell only, and all nearby cells
+    	// Finally, if this agent is inactive, remove from the (and use the newly returned iterator)
+    	if ( ((AbstractAgent*)(*iter))->isActive() ) {
+    		++iter;
+    	} else {
+    		iter = agents.erase(iter);
     	}
-    	cellJitterIteration++;
 
-    	// Update the shadow: note if we need to know the shadow in the above update then we have to update it after very cell move!!
-    	// 1. Reset, then 2. loop through all Cells
-        //for (int x=0;x<conf::WIDTH;x++) for (int y=0;y<conf::HEIGHT;y++) CellShadow[x][y] = 0;
-    	//for (int i=0;i<cells.size();i++) setCellShadow( cells[i] );
-    } else if (docelljitter && cellJitterIteration >= 10) {
-    	// Have reached the last cell jitter, reset and refresh background.
-    	docelljitter = false;
-    	dobackgroundrefresh = true;
-    } else if (cellJitterIteration < 0) {
-    	cellJitterIteration = 0;
     }
+
 }
 
-void World::resetShadowLayer(Cell * c, Vector2f oldpos) {
-	// 1. Zero out the old x,y of Cell c
-	// ... and find all cells surrounding the old x.y of Cell c
-	int r = c->radius;
-	float rsq1 = pow(r+1,2);
-	float rsq2 = pow(c->radius,2);
-	int max_x = min(conf::WIDTH, int(c->pos.x+c->radius));
-	int max_y = min(conf::HEIGHT, int(c->pos.y+c->radius));
+// This will clear all cells before placing them on the patches.
+// The idea is that the setup mode is used to create the "world", and then the world is saved to a file.
+// The saved world consists of patches and (N/S/I) cells, but no rates, CTL or virions (the first 2 are in the setup file).
+// SHOULD include CTL as we can start the simulation with them!
+void World::placeCells() {
 
-	unordered_set<Cell *> surroundingCells;
+	int r = conf::BOTRADIUS;
+	cells.clear();
+	resetBoundingBox(); // Bounding box may be determined by manually placed cells
+	// We therefore reset the bounding box (so it includes only the patches) and then re-place the cells.
 
-	// Loop through the bounding box and put the reference to the cell in CellShadow[][] if it's "within" the circle
-	// a. Check if we have another cell potentially overlapping
-	// b. Zero out the old cell radius
-	for (int i=max(0,int(oldpos.x-c->radius));i<max_x; i++ ) {
-		for (int j=max(0,int(oldpos.y-c->radius));j<max_y; j++ ) {
-			//
-			if ( ( pow(oldpos.x-i,2) + pow(oldpos.y-j,2) ) < rsq1 ) {
-				// point is within the "danger zone" - check if we have a non-zero entry here
-				if ( CellShadow[i][j] != 0 && CellShadow[i][j] != c ) {
-					// If point in bounding box is not empty (0), this cell (c) [or already in the vector], then add it
-					surroundingCells.insert( &(*CellShadow[i][j]) );
-				}
-				if ( ( pow(oldpos.x-i,2) + pow(oldpos.y-j,2) ) < rsq2 ) {
-					// If the point is within the boundary of the cell, then reset to 0
-					CellShadow[i][j] = 0;
+	// Step through the patch vector to find the last patch and first patch
+	int lastPatch = 0;
+	int firstPatch = conf::WIDTH*conf::HEIGHT;
+	for ( int p=0; p<patchV.size(); p++ ) {
+		if (patchV[p]>lastPatch)  lastPatch  = patchV[p];
+		if (patchV[p]<firstPatch) firstPatch = patchV[p];
+	}
+
+	// Start placing the cells
+	int packoffset = 0;
+	for ( int j=r; j<bounding_max.y-r+1; j+=2*r-1) {
+		packoffset = ((j-5)%2==0)?0:r; // add this to i to find the x-coord
+		for ( int i=r; i<bounding_max.x-r; i+=2*r ) {
+			// Is there a patch nearby? For now just check i,j coord itself
+			if ( isNearPatch(i+packoffset,j) ) {
+				// Drop a new cell here.
+				addCell(i+packoffset,j);
+			}
+		}
+	}
+
+	// Update the shadow: have to do it here as there might be cells that were not placed near a patch before (if #patch<#cells).
+	resetShadowLayer();
+	resetBoundingBox();
+}
+
+/*
+void World::placeCellsOld() {
+
+	int r = conf::BOTRADIUS;
+
+	// Set up the cell iterator (this releases cells when popped)
+	// Need to be careful, as an empty cells will crash things (I think?)
+	std::random_shuffle(cells.begin(), cells.end());
+	vector<Cell *>::iterator cellsIt = cells.begin();
+	bool outOfCells = cells.empty();
+
+	// If in jitter mode, then step through the world
+	int packoffset = 0;
+	for ( int j=r+1; j<conf::HEIGHT-r+1; j+=2*r-1) {
+		packoffset = ((j-5)/10%2)?0:r; // add this to i to find the x-coord
+		for ( int i=r; i<conf::WIDTH-r; i+=2*r ) {
+			// Is there a patch nearby? For now just check i,j coord itself
+			if ( isNearPatch(i+packoffset,j) ) {
+				// Drop a cell here.
+				// If there are no more cells in cells and automanage is on, then create new. Else return.
+				if ( !outOfCells && cellsIt != cells.end() ) {
+					// Place current cell here
+					(*cellsIt)->pos.x = (i+packoffset);
+					(*cellsIt)->pos.y = j;
+					++cellsIt;
+				} else {
+					outOfCells = true;
+					// No more cells! Either create new or end the jitter
+					if ( autoManageCells ) {
+						// Create new cell, pushback onto cells
+						//cout << "--- creating new cell!\n";
+						addCell(i+packoffset,j);
+					} else {
+						// No more cells :-( Finito. Need to use a GOTO in order to break out of the double for loop. FACT.
+						goto NoMoreCells;
+					}
 				}
 			}
 		}
 	}
-	// 3. Reset the Shadow for all cells surrounding c
-	//  - needs to iterate through the surroundingCells list and reset everything there
-	unordered_set<Cell *>::iterator thisSurroundingCell;
-	for( thisSurroundingCell = surroundingCells.begin(); thisSurroundingCell != surroundingCells.end(); thisSurroundingCell++ ) {
-		setCellShadow( *thisSurroundingCell );
-		//cout << "Surrounding cell is: " << thisSurroundingCell->first << "\n";
+
+	// For all the other cells (if not placed), stick at random on the world
+	// This prevents multiple Jitters from layering all the cells on the patch
+	// Arguably, these cells are surplus and should be destroyed.
+	if ( !outOfCells ) {
+		while ( cellsIt!=cells.end() ) {
+			(*cellsIt)->pos.x = randf(0,conf::WIDTH);
+			(*cellsIt)->pos.y = randf(0,conf::HEIGHT);
+			++cellsIt;
+		}
 	}
-	// 4. Reset the Shadow for c
-	setCellShadow(c);
+
+	NoMoreCells:
+
+	// Update the shadow: have to do it here as there might be cells that were not placed near a patch before (if #patch<#cells).
+	resetShadowLayer();
+}
+*/
+
+// Checks if there is a patch within 4 pixels of (x,y)
+bool World::isNearPatch(int x, int y) {
+	int r = conf::BOTRADIUS;
+	for (int i=max(0,x-4*r); i<min(bounding_max.x, x+4*r); i++) {
+		for (int j=max(0,y-4*r); j<min(bounding_max.y, y+4*r); j++) {
+			if ( patch[i][j] == 1 ) return true;
+		}
+	}
+	return false;
 }
 
 // Given a cell type, returns the colour array
 float * World::getCellColourFromType(int ct) {
-
 	switch(ct) {
 		case Cell::CELL_NOT_SUSCEPTIBLE: 	return(COLOUR_NOT_SUSCEPTIBLE);
 		case Cell::CELL_SUSCEPTIBLE: 		return(COLOUR_SUSCEPTIBLE);
@@ -307,9 +281,15 @@ float * World::getCellColourFromType(int ct) {
 		case Cell::CELL_CTL: 				return(COLOUR_CTL);
 		case Cell::CELL_DEAD: 				return(COLOUR_DEAD);
 	};
-
 }
 
+void World::setInputs(float timestep) {
+	for (int i=0;i<agents.size();i++) {
+		agents[i]->setInput(timestep, this);
+	}
+}
+
+/* Scriptbots version: DEPRECATED
 void World::setInputs() {
 
     //P1 R1 G1 B1 FOOD P2 R2 G2 B2 SOUND SMELL HEALTH P3 R3 G3 B3 CLOCK1 CLOCK 2 HEARING     BLOOD_SENSOR
@@ -451,7 +431,16 @@ void World::setInputs() {
         a->in[19]= cap(blood);
     }
 }
+*/
 
+void World::processOutputs(float timestep) {
+	// Loop through all active agents
+	for (int i=0;i<agents.size();i++) {
+		agents[i]->doOutput(timestep, this);
+	}
+}
+
+/* Scriptbots version: DEPRECATED
 void World::processOutputs() {
 
     //assign meaning
@@ -592,25 +581,9 @@ void World::processOutputs() {
     }
 }
 
-void World::brainsTick() {
+*/
 
-#pragma omp parallel for
-
-	for (int i=0;i<agents.size();i++) {
-        agents[i].tick();
-    }
-
-}
-
-void World::addRandomBots(int num) {
-
-    for (int i=0;i<num;i++) {
-        Agent a;
-        a.id= idcounter;
-        idcounter++;
-        agents.push_back(a);
-    }
-}
+//#pragma omp parallel for
 
 void World::addRandomCells(int num) {
 
@@ -619,60 +592,54 @@ void World::addRandomCells(int num) {
 		num = DEFAULT_NUM_CELLS_TO_ADD;
 
     for (int i=0;i<num;i++) {
-        Cell * c = new Cell();
-        // Set probability that this cell is susceptible
-        c->setSusceptible( SUSCEPTIBLE_PERCENTAGE );
-        // Set cell ID and push onto the cells array
-        c->id = cidcounter;
-        cidcounter++;
-        cells.push_back(c);
-        // Update the cell shadow layer with every point this cell takes up, with a call to setCellShadow(c.pos.x, c.pos.y, r)
-        setCellShadow(c);
-        // Randomly choose a patch to home into
-        //c->setClosestPatch(&patch[0][0]);
-        c->chooseRandomPatch( patchVector );
+    	addCell(-1,-1);
     }
 
-    // Tell View that background has changed and needs to be refreshed
-    dobackgroundrefresh = true;
+}
+
+// Add an agent to the world
+void World::addAgent( AbstractAgent *a ) {
+	agents.push_back( a );
 }
 
 
 void World::addCell(int x, int y) {
 	Cell * c = new Cell();
-	// Put at required location
-	//cout << "[DEBUG] placing cell ("<< c << ") at (" << x << "," << y << ")\n";
-	c->pos.x = x;
-	c->pos.y = y;
+	// Put at required location, if x==-1 then leave as is
+	if (x >= 0) {
+		c->pos.x = x;
+		c->pos.y = y;
+	}
+	// Check the bounding box
+	checkBoundingBox(c->pos.x,c->pos.y);
 	// Set probability that this cell is susceptible: Generate number between 0.00 and 100.00
 	c->setSusceptible( SUSCEPTIBLE_PERCENTAGE );
 	// Do the other required stuff (set ID, push onto Cell vector)
-	c->id = cidcounter;
-	cidcounter++;
 	cells.push_back(c);
     // Update the cell shadow layer with every point this cell takes up, with a call to setCellShadow(c.pos.x, c.pos.y, r)
     setCellShadow(c);
-    // Select a random patch to home into
-    c->chooseRandomPatch( patchVector );
-    //c->setClosestPatch(&patch[0][0]);
-    // Tell View that background has changed and needs to be refreshed
-    dobackgroundrefresh = true;
 }
 
-void World::setCellShadow(Cell *c) {
-	_setCellShadow( c, c );
+void World::resetShadowLayer() {
+	// First, reset to 0
+	for (int x=0;x<conf::WIDTH;x++) for (int y=0;y<conf::HEIGHT;y++) CellShadow[x][y] = 0;
+
+	// Then, setup through the cells vector
+	for (int i=0;i<cells.size();i++) {
+		setCellShadow( cells[i] );
+	}
 }
 
-void World::resetCellShadow(Cell *c) {
-	_setCellShadow( c, 0 );
+void World::setCellShadow( Cell * c ) {
+	_setCellShadow(c,c);
 }
 
 // Given a Cell*, sets the address of the Cell in the 2D "World" shadow, CellShadow[][].
 void World::_setCellShadow(Cell *c, Cell * value) {
 	// Some handy variables to speed stuff up
 	float rsq = pow(c->radius,2);
-	int max_x = min(conf::WIDTH, int(c->pos.x+c->radius));
-	int max_y = min(conf::HEIGHT, int(c->pos.y+c->radius));
+	int max_x = min(bounding_max.x, int(c->pos.x+c->radius));
+	int max_y = min(bounding_max.y, int(c->pos.y+c->radius));
 
 	// Loop through the bounding box and put the reference to the cell in CellShadow[][] if it's "within" the circle
 	for (int x=max(0,int(c->pos.x-c->radius));x<max_x; x++ ) {
@@ -694,29 +661,15 @@ void World::resetCellSusceptibility() {
 			cells[i]->setSusceptible( SUSCEPTIBLE_PERCENTAGE );
 		}
 	}
-    // Tell View that background has changed and needs to be refreshed
-	dobackgroundrefresh = true;
 }
 
 // When we clear cells, we need to remove all cells from the iterator, the selectedCell, inFocusCell AND reset the ShadowGrid
 void World::clearAllCells() {
+	agents.clear();
 	cells.clear();
-	selectedCell = 0;
-	inFocusCell  = 0;
-    for (int x=0;x<conf::WIDTH;x++) {
-        for (int y=0;y<conf::HEIGHT;y++) {
-            CellShadow[x][y] = 0;
-        }
-    }
-    // Tell View that background has changed and needs to be refreshed
-    dobackgroundrefresh = true;
-}
-
-void World::startJitter() {
-	if ( !docelljitter ) {
-		docelljitter = true;
-		cellJitterIteration = -1;
-	}
+	resetShadowLayer();
+	// Also reset the bounding box (depends on the patch vector)
+	resetBoundingBox();
 }
 
 // Check if the given coord is over a cell, return true/false
@@ -725,94 +678,21 @@ bool World::isOverCell(int x, int y) {
 }
 
 // Return the cell at coord x,y (0 if nothing is there)
-Cell * World::getCell(int x, int y) {
+Cell* World::getCell(int x, int y) {
 	return( (Cell*)CellShadow[x][y] );
-}
-
-// If mouse was clicked over a cell, set that cell as "selected"
-// Also gets rid of existing selected cell.
-void World::setSelectOnCell(int x, int y) {
-	if (isOverCell(x,y)) {
-		Cell * newSelectedCell = getCell(x,y);
-		cout << "SelectedCell is " << newSelectedCell << "\n";
-		if (selectedCell != 0 && selectedCell != newSelectedCell) {
-			selectedCell->toggleSelected();
-		}
-		selectedCell = newSelectedCell;
-		selectedCell->toggleSelected();
-	}
 }
 
 // If we click on a non-susceptible or susceptible cell, we infect it
 // If we click on an infected cell, we remove the infection
-void World::setInfection(int x, int y) {
+void World::toggleInfection(int x, int y) {
 	if (isOverCell(x,y)) {
 		Cell * c = getCell(x,y);
 		c->toggleInfection();
+		if ( c->isInfected() ) {
+			// Add to ActiveAgent queue
+			agents.push_back(c);
+		}
 	}
-    // Tell View that background has changed and needs to be refreshed
-	dobackgroundrefresh = true;
-}
-
-// If mouse is over a cell, set that cell as "in focus"
-// Else remove the focus from the existing cell
-void World::setFocusOnCell(int x,int y) {
-	if (isOverCell(x,y)) {
-		inFocusCell = getCell(x,y);
-		inFocusCell->setInFocus(true);
-	} else if ( inFocusCell != 0 ) {
-		inFocusCell->setInFocus(false);
-		inFocusCell = 0;
-	}
-}
-
-void World::addNewByCrossover() {
-
-    //find two success cases
-    int i1= randi(0, agents.size());
-    int i2= randi(0, agents.size());
-    for (int i=0;i<agents.size();i++) {
-        if (agents[i].age > agents[i1].age && randf(0,1)<0.1) {
-            i1= i;
-        }
-        if (agents[i].age > agents[i2].age && randf(0,1)<0.1 && i!=i1) {
-            i2= i;
-        }
-    }
-
-    Agent* a1= &agents[i1];
-    Agent* a2= &agents[i2];
-
-
-    //cross brains
-    Agent anew = a1->crossover(*a2);
-
-
-    //maybe do mutation here? I dont know. So far its only crossover
-    anew.id= idcounter;
-    idcounter++;
-    agents.push_back(anew);
-}
-
-void World::reproduce(int ai, float MR, float MR2) {
-
-    if (randf(0,1)<0.04) MR= MR*randf(1, 10);
-    if (randf(0,1)<0.04) MR2= MR2*randf(1, 10);
-
-    agents[ai].initEvent(30,0,0.8,0); //green event means agent reproduced.
-    for (int i=0;i<conf::BABIES;i++) {
-
-        Agent a2 = agents[ai].reproduce(MR,MR2);
-        a2.id= idcounter;
-        idcounter++;
-        agents.push_back(a2);
-
-        // For someone to fix recording
-        //record this
-        //FILE* fp = fopen("log.txt", "a");
-        //fprintf(fp, "%i %i %i\n", 1, this->id, a2.id); //1 marks the event: child is born
-        //fclose(fp);
-    }
 }
 
 void World::writeReport() {
@@ -838,8 +718,13 @@ void World::writeReport() {
 
 
 void World::reset() {
+    for (int x=0;x<conf::WIDTH;x++) {
+    	patch.push_back( vector<bool>(conf::HEIGHT,false) );
+    	CellShadow.push_back( vector<Cell*>(conf::HEIGHT,(Cell*)0) );
+    }
+	patchV.clear();
+	cells.clear();
     agents.clear();
-    addRandomBots(conf::NUMBOTS);
 }
 
 void World::setClosed(bool close) {
@@ -858,25 +743,12 @@ bool World::isClosed() const {
  */
 
 
-void World::drawBackground(View* view, bool drawfood) {
+void World::drawBackground(View* view, bool simulationmode) {
 
-	//cout << "Drawing the background from scratch..\n";
-
-    if(drawfood) {
-        for(int i=0;i<FW;i++) {
-            for(int j=0;j<FH;j++) {
-                float f= 0.5*food[i][j]/conf::FOODMAX;
-                view->drawFood(i,j,f);
-            }
-        }
-    }
-
-	// Draw patches from patch
-	for(int i=0;i<conf::WIDTH;i++) {
-		for(int j=0;j<conf::HEIGHT;j++) {
-			if ( patch[i][j] == 1) {
-				view->drawDot(i,j);
-			}
+	// Draw patches from patchV, but only if in setup mode
+	if ( !simulationmode ) {
+		for (int i=0; i<patchV.size(); i++) {
+			view->drawDot( int(patchV[i]/conf::WIDTH), (patchV[i]%conf::WIDTH) );
 		}
 	}
 
@@ -885,46 +757,32 @@ void World::drawBackground(View* view, bool drawfood) {
 		view->drawCell(**cit);
 	}
 
+	// Draw the bounding box
+	if ( bounding_max.x != -1 ) {
+		glBegin(GL_LINES);
+		glColor4f(0.5,0.5,0.5,0.5);
+		glVertex3f(bounding_min.x,bounding_min.y,0);
+		glVertex3f(bounding_max.x,bounding_min.y,0);
 
-	// Finally: draw the Selected and InFocus cells (if any), and reset InFocus :)
-	if ( selectedCell != 0 ) view->drawCell( *selectedCell );
-	if ( inFocusCell  != 0 ) view->drawCell( *inFocusCell );
+		glVertex3f(bounding_max.x,bounding_min.y,0);
+		glVertex3f(bounding_max.x,bounding_max.y,0);
 
-    // Reset the background refresh flag
-	dobackgroundrefresh = false;
+		glVertex3f(bounding_max.x,bounding_max.y,0);
+		glVertex3f(bounding_min.x,bounding_max.y,0);
+
+		glVertex3f(bounding_min.x,bounding_max.y,0);
+		glVertex3f(bounding_min.x,bounding_min.y,0);
+		glEnd();
+	}
 }
 
-bool World::doBackgroundRefresh() {
-	return dobackgroundrefresh;
-}
-
-void World::setBackgroundRefresh(bool b) {
-	dobackgroundrefresh = b;
-}
 
 void World::drawForeground(View* view) {
-
-    vector<Agent>::const_iterator ait;
+    vector<AbstractAgent*>::const_iterator ait;
     for ( ait = agents.begin(); ait != agents.end(); ++ait) {
-        view->drawAgent(*ait);
+        view->drawAgent(*ait); // note: this just calls ait->drawAgent(view);
+        //(*ait)->drawAgent((GLView)view);	// Skip the middle man, if I can figure out how
     }
-
-	if (docelljitter) {
-		// Update with progress
-		view->drawProgressBar(cellJitterIteration/10.0);
-	}
-
-}
-
-std::pair< int,int > World::numHerbCarnivores() const {
-    int numherb=0;
-    int numcarn=0;
-    for (int i=0;i<agents.size();i++) {
-        if (agents[i].herbivore>0.5) numherb++;
-        else numcarn++;
-    }
-
-    return std::pair<int,int>(numherb,numcarn);
 }
 
 int World::numAgents() const {
@@ -935,6 +793,73 @@ int World::numCells() const {
 	return cells.size();
 }
 
-int World::epoch() const {
-    return current_epoch;
+// Will save the patch and cell info as csv to a file (specified in name)
+//TODO: Check if we overwrite an existing file
+void World::saveLayout() {
+
+	ofstream setupfile(ibs->layoutfilename);
+	if (!setupfile.good()) {
+		cout << "ERROR: Could not make setup file '"<< ibs->layoutfilename <<"'; setup save failed.\n";
+		return;
+	}
+
+	// Ensure there is at least one agent which is an infected cell
+	bool haveAnInfectedCell = false;
+	for (int a=0; a<agents.size(); a++) {
+		if ( agents[a]->getAgentType().compare("Cell") == 0 ) {
+			// Cast to a Cell and check if infective
+			if ( ((Cell*)(agents[a]))->isInfected() ) {
+				// Break out of loop
+				haveAnInfectedCell = true;
+				break;
+			}
+		}
+	}
+	if (!haveAnInfectedCell) cout << "WARNING: No infected cells in the layout.\n";
+
+    {	// save setup data, i.e. certain parts of the world class, to archive
+        boost::archive::text_oarchive oa(setupfile);
+        oa << (*this);
+    } 	// archive and stream closed when destructors are called
+
 }
+
+// Will load a world setup from the given filename
+void World::loadLayout() {
+
+	// Create a link to the setup file and read it the contents
+	string fn = ibs->layoutfilename;
+	ifstream setupfile(fn);
+	if (!setupfile.good()) {
+		cout << "ERROR: Setupfile '"<< fn <<"' does not exist in working dir, setup failed.\n";
+		return;
+	}
+
+	World wyrd(new ImmunebotsSetup()); // The wyrd world will temporarily store the world we saved from set up
+	boost::archive::text_iarchive ia(setupfile);
+	ia >> wyrd;
+	// Now re-assign cells and patch (will overwrite cells and patches)
+	cells = wyrd.cells;
+	patchV = wyrd.patchV;
+	bounding_min = wyrd.bounding_min;
+	bounding_max = wyrd.bounding_max;
+
+	cout << "Loaded cells and patch info\n";
+	bounding_min = wyrd.bounding_min;
+	// Add cells to active queue
+	for (int i=0;i<cells.size();i++) {
+		if ( cells[i]->isActive() ) {
+			agents.push_back( cells[i] );
+		}
+	}
+
+	// Reset the shadow layer
+	resetShadowLayer();
+
+	// Reset and regenerate the patch[x][y] matrix from the vector.
+	for (int i=0;i<conf::WIDTH;i++) for (int j=0;j<conf::HEIGHT;j++) patch[i][j] = 0;
+	for (int p=0;p<patchV.size();p++) {
+		patch[int(patchV[p]/conf::WIDTH)][patchV[p]%conf::WIDTH] = true;
+	}
+}
+

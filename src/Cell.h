@@ -9,41 +9,46 @@
 #define CELL_H_
 
 #include "vmath.h"
+#include "World.h"
+#include "GLView.h"
+#include "AbstractAgent.h"
 
 #include <vector>
 #include <string>
 
-class Cell {
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+
+class GLView;
+
+class Cell: public AbstractAgent {
 
 public:
 	Cell();
 	Cell(int x, int y);
 	virtual ~Cell();
 
-    void printSelf();
-    //for drawing purposes
-    void initEvent();
+    // The following are AbstractAgent classes, which we make concrete in this class
+	void drawAgent(GLView * const);
+	void setInput(float dt, World * const);
+	void doOutput(float dt, World * const);
+	void printInfo();
+	string getAgentType() { return string("Cell"); }
 
-    Vector2f pos;
-    float angle;
-    float speed;
-    int id;
+    // Variables to define the cell
+    int id; // TODO: remove?
     float radius;
-    bool isSelected;
-    bool isInFocus;
-    bool isInfected;
+	int cType; 	// This is one of the CELL_ types (should enumerate?)
 
-	// This is one of the CELL_ types
-	int cType;
 	void setCellType(int newType);
 
 	// Set Cell Type functions (really just wrappers for setCellType)
 	void setInfected(bool isInfected);
 	void setSusceptible(float sp);
+	void setKilled();
 	void toggleInfection();
-
-	void toggleSelected();
-	void setInFocus(bool f);
+	bool isInfected();
+	bool isSusceptible();
 
     // Keep a record of where we're trying to get to
     Vector2f nearestPatch;
@@ -59,8 +64,24 @@ public:
     static const int CELL_DEAD			  = 99;
     // Note: Ensure that Cell::setColourFromType() has a case for all of the above Cell Types
 
-
 private:
+
+	/* Rate parameters, in seconds*/
+	float r_vproduction; // Rate of virion production
+	float r_death; // Infected cell death rate
+
+	// For serialisation:
+    friend class boost::serialization::access;
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version) {
+        ar & pos;
+        ar & angle;
+        ar & speed;
+        ar & id;
+        ar & radius;
+        ar & cType;
+        ar & active;
+    }
 
 };
 

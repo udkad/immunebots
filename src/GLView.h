@@ -3,9 +3,7 @@
 
 #include <GL/glut.h>
 
-
 #include "View.h"
-#include "World.h"
 
 /* Set of static const values to determine what the LEFT_CLICK does */
 const static int MOUSESTATE_DEFAULT     = 0;
@@ -13,12 +11,15 @@ const static int MOUSESTATE_DRAW_PATCH  = 1;
 const static int MOUSESTATE_PLACE_CELL  = 2;
 const static int MOUSESTATE_INFECT_CELL = 3;
 
-
+class AbstractAgent;
 class GLView;
+class ImmunebotsSetup;
+class World;
 
 extern GLView* GLVIEW;
 
 void gl_processNormalKeys(unsigned char key, int x, int y);
+void gl_processSpecialKeys(int key, int x, int y);
 void gl_processMouse(int button, int state, int x, int y);
 void gl_processMouseActiveMotion(int x, int y);
 void gl_processMousePassiveMotion(int x, int y);
@@ -29,19 +30,22 @@ void gl_renderScene();
 class GLView : public View {
 
 public:
-    GLView(World* w);
+    GLView(World*, ImmunebotsSetup*);
     virtual ~GLView();
 
-    virtual void drawAgent(const Agent &a);
+    virtual void drawAgent(AbstractAgent*);
     virtual void drawCell(const Cell &cell);
-    virtual void drawFood(int x, int y, float quantity);
     virtual void drawDot(int x, int y);
 
     void setWorld(World* w);
-    void addMenu();
+
+    // Tw Tweak functions
+    void createSetupMenu(bool visible);
+    void createSimulationMenu(bool visible);
 
     //GLUT functions
     void processNormalKeys(unsigned char key, int x, int y);
+    void processSpecialKeys(int key, int x, int y);
     void processMouse(int button, int state, int x, int y);
     void processMouseActiveMotion(int x, int y);
     void processMousePassiveMotion(int x, int y);
@@ -49,36 +53,50 @@ public:
     void handleIdle();
     void renderScene();
 
+    // Control the state of the program (setup <-> simulation)
+    void switchToSimulationMode(bool dosim);
+
     int  getMouseState();
     void setMouseState(int v);
 
     void toggleDrawing();
-    void toggleFoodLayer();
+    void togglePaused();
+
+    // Drawing functions
+    void drawCircle(float x, float y, float r);
+    void RenderString(float x, float y, void *font, const char* string, float r, float g, float b);
 
     /* TEST FUNCTIONS*/
     void drawProgressBar(float completed);
 
-    // Background image store
-    unsigned char * backgroundImage;
-
 private:
 
     World *world;
+    ImmunebotsSetup *ibs; // Our config/setup object
+
+    bool dosimulation; // Starts off as false, when true THEN paused is enabled
     bool paused;
     bool draw;
     int skipdraw;
-    bool drawfood;
-    bool drawcelltarget;
     char buf[100];
     char buf2[10];
     int modcounter;
-    int lastUpdate;
     int frames;
     int idlecalled;
+    int lastUpdate;
     int mouseState;
-	int mouseX;
-	int mouseY;
-	bool saveBackground;
+	bool processsetupevents;
+	int fastforwardtime;
+
+	/* Pan & mouse position info */
+	float xoffset;	// Determine if we have panned left/right (def is: 0)
+	float yoffset;
+	bool mousedownnomove;
+	int lastmousey; // Need to know the last place the mouse was panned from
+	int lastmousex;
+	float scale;
+
+	void automaticEventSetup();
 };
 
 #endif // GLVIEW_H

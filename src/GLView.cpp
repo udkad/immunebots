@@ -1,11 +1,21 @@
-#include "GLView.h"
+
 #include <AntTweakBar.h>
+
 #include <ctime>
 #include <stdio.h>
-#include "config.h"
+#include <string>
+
 #include <GL/glut.h>
 
-#include <stdio.h>
+#include "settings.h"
+#include "vmath.h"
+#include "GLView.h"
+#include "ImmunebotsSetup.h"
+#include "config.h"
+#include "World.h"
+#include "AbstractAgent.h"
+#include "Cell.h"
+#include "CTL.h"
 
 /*Test libraries*/
 #include <fstream>
@@ -15,6 +25,10 @@ using namespace std;
 
 void gl_processNormalKeys(unsigned char key, int x, int y) {
     GLVIEW->processNormalKeys(key, x, y);
+}
+
+void gl_processSpecialKeys(int key, int x, int y) {
+    GLVIEW->processSpecialKeys(key, x, y);
 }
 
 void gl_changeSize(int w, int h) {
@@ -42,7 +56,7 @@ void gl_renderScene() {
 }
 
 
-void RenderString(float x, float y, void *font, const char* string, float r, float g, float b) {
+void GLView::RenderString(float x, float y, void *font, const char* string, float r, float g, float b) {
     glColor3f(r,g,b);
     glRasterPos2f(x, y);
     int len = (int) strlen(string);
@@ -50,7 +64,7 @@ void RenderString(float x, float y, void *font, const char* string, float r, flo
         glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, string[i]);
 }
 
-void drawCircle(float x, float y, float r) {
+void GLView::drawCircle(float x, float y, float r) {
     float n;
     for (int k=0;k<17;k++) {
         n = k*(M_PI/8);
@@ -79,9 +93,46 @@ void TW_CALL ClearAllCells( void * world ) {
 	((World*)world)->clearAllCells();
 }
 
-void TW_CALL DoCellJitter( void * world ) {
-	((World*)world)->startJitter();
+void TW_CALL PlaceCellsOnPatches( void * world ) {
+	((World*)world)->placeCells();
 }
+
+void TW_CALL SaveLayout( void * world ) {
+	((World*)world)->saveLayout();
+}
+
+void TW_CALL LoadLayout( void * world ) {
+	((World*)world)->loadLayout();
+}
+
+void TW_CALL SwitchToSimulationMode( void * w ) {
+	// When we call this we to the following:
+	// 1. hide the setup bar
+	// 2. show the simulation bar
+	// 3. Change the world state
+	// Note: Should we save the setup?
+	TwDefine(" Setup visible=false ");
+	TwDefine(" Simulation visible=true ");
+	GLVIEW->switchToSimulationMode(true);
+}
+
+
+void TW_CALL SwitchToSetupMode( void * w ) {
+
+	TwDefine(" Simulation visible=false ");
+	TwDefine(" Setup visible=true ");
+	GLVIEW->switchToSimulationMode(false);
+}
+
+
+void TW_CALL PauseContinueSimulation(void *) {
+	GLVIEW->togglePaused();
+}
+
+/*
+ * MOUSE TW_CALLS - check if still relevant *
+ */
+
 
 // This is the function which is called by the "helper" mousestate function to get the mousestate for the GUI
 void TW_CALL GetMouseState(void * value, GLView * view, int ThisMouseState) {
@@ -126,19 +177,18 @@ void TW_CALL SetMouseStateInfectCell(const void *v, void *view) {
 	SetMouseState( *(const bool *)v, (GLView *)(view), MOUSESTATE_INFECT_CELL);
 }
 
-void GLView::addMenu() {
+void TW_CALL CopyStdStringToClient(std::string& destinationClientString, const std::string& sourceLibraryString) {
+  // Copy the content of souceString handled by the AntTweakBar library to destinationClientString handled by your application
+  destinationClientString = sourceLibraryString;
+}
 
-	TwInit(TW_OPENGL, NULL);
-	TwWindowSize(conf::WWIDTH,conf::WHEIGHT);
-	//TwDeleteAllBars();
-	TwBar* bar = TwNewBar("Immunebots");
 
-	TwDefine("Immunebots color='0 0 0' alpha=128 position='10 10' size='240 500'");
-	TwDefine("Immunebots fontresizable=false resizable=true");
+void GLView::createSetupMenu(bool visible) {
 
-	//TwEnumVal v[] = { { 0, "muted" }, { 1, "fire" }, { 2, "purple" }, { 3, "rainbow" }, { 4, "sky" } };
-	//TwType type = TwDefineEnum("colors", &v[0], 5);
-	//TwAddVarRW(bar, "Colors", type, &mPaletteIdx, "");
+	TwBar* bar = TwNewBar("Setup");
+
+	TwDefine("Setup color='0 0 0' alpha=128 position='10 10' size='240 550'");
+	TwDefine("Setup fontresizable=false resizable=true");
 
 	TwAddVarRO(bar, "MouseState", TW_TYPE_INT32, (&mouseState), " label='Mouse state' " );
 
@@ -153,6 +203,7 @@ void GLView::addMenu() {
     // Callback to switch on/off the cell dropper
 	TwAddVarCB(bar, "pc_switch", TW_TYPE_BOOLCPP, SetMouseStatePlaceCell, GetMouseStatePlaceCell, this,
     		" label='Manually place cells' group='Cells Setup' help='Toggle to switch on cell dropping mode.' ");
+	TwAddButton(bar, "clear_cells", ClearAllCells, world, " label='Clear all cells' group='Cells Setup' ");
 
 	// Allow user to change the cell colours (Cell Setup/Cell colour, starts off closed)
 	TwAddVarRW(bar, "ctn_colour", TW_TYPE_COLOR3F, &((*world).COLOUR_NOT_SUSCEPTIBLE), 	" label='Not susceptible' group='Cell colour' ");
@@ -160,22 +211,26 @@ void GLView::addMenu() {
 	TwAddVarRW(bar, "cti_colour", TW_TYPE_COLOR3F, &((*world).COLOUR_INFECTED), 		" label='Infected' group='Cell colour' ");
 	TwAddVarRW(bar, "ctc_colour", TW_TYPE_COLOR3F, &((*world).COLOUR_CTL),				" label='CTL' group='Cell colour' ");
 	TwAddVarRW(bar, "ctd_colour", TW_TYPE_COLOR3F, &((*world).COLOUR_DEAD),				" label='Dead' group='Cell colour' ");
-	TwDefine(" Immunebots/'Cell colour' group='Cells Setup' opened=false ");  // group Color is moved into group Cells Setup
+	TwDefine(" Setup/'Cell colour' group='Cells Setup' opened=false ");  // group Color is moved into group Cells Setup
 
 	// Callback to the manual cell infector on/off switch
 	TwAddVarCB(bar, "ic_switch", TW_TYPE_BOOLCPP, SetMouseStateInfectCell, GetMouseStateInfectCell, this,
     		" label='Manually infect cell' group='Cells Setup' help='Toggle to switch on infect cell mode.' ");
-	TwAddButton(bar, "clear_cells", ClearAllCells, world, " label='Clear all cells' group='Cells Setup' ");
 
 	TwAddSeparator(bar, NULL, NULL);
 
 	TwAddButton(bar, "toggle_label", NULL, NULL, "label='Display options:'");
-	TwAddVarRW(bar, "fl_toggle", TW_TYPE_BOOLCPP, &drawfood,       " label='  Show food' ");
-	TwAddVarRW(bar, "ct_toggle", TW_TYPE_BOOLCPP, &drawcelltarget, " label='  Draw cell target line' ");
 
 	TwAddSeparator(bar, NULL, NULL);
 
-	TwAddButton(bar, "jc_toggle", DoCellJitter, world, " label='Jitter cells' ");
+	TwAddButton(bar, "placecells_toggle", PlaceCellsOnPatches, world, " label='Place cells on patches' ");
+
+	TwAddSeparator(bar, NULL, NULL);
+
+	TwCopyStdStringToClientFunc(CopyStdStringToClient); /* Bit of magic to copy user-defined strings to the program */
+	TwAddVarRW(bar, "filename_str", TW_TYPE_STDSTRING, &((*ibs).layoutfilename), "label='Setup filename' group='Setup load/save' ");
+	TwAddButton(bar, "save_Setup", SaveLayout, world, " label='Save Setup' group='Setup load/save' ");
+	TwAddButton(bar, "load_Setup", LoadLayout, world, " label='Load Setup' group='Setup load/save' ");
 
 	TwAddSeparator(bar, NULL, NULL);
 
@@ -184,30 +239,72 @@ void GLView::addMenu() {
 	TwAddButton(bar, "pl_toggle", NULL, NULL, "label='  Toggle patch layer'");
 	TwAddButton(bar, "reset_colour_button", NULL, NULL, " label='  Reset cell colour' ");
 
+	TwAddSeparator(bar, NULL, NULL);
+
+	TwAddButton(bar, "switchToSimulation_button", SwitchToSimulationMode, world, " label='Switch To Simulation Mode' ");
+
+	// And hide if required
+	if (!visible) {
+		TwDefine("'Setup' visible=false");
+	}
+
 }
 
-GLView::GLView(World *s):
-        world(world),
-        paused(false),
+void GLView::createSimulationMenu(bool visible) {
+
+	TwBar* barsm = TwNewBar("Simulation");
+
+	TwDefine("'Simulation' color='0 0 0' alpha=128 position='15 15' size='240 150'");
+	TwDefine("'Simulation' fontresizable=false resizable=true");
+
+	TwAddVarRO(barsm, "simstate", TW_TYPE_BOOLCPP, (&paused), " label='Is simulation paused?' " );
+
+	TwAddSeparator(barsm, NULL, NULL);
+
+	TwAddButton(barsm, "pause_toggle", PauseContinueSimulation, NULL, " label='Start/Pause simulation' ");
+
+	TwAddSeparator(barsm, NULL, NULL);
+
+	TwAddButton(barsm, "switchToSetup_button", SwitchToSetupMode, world, " label='Return to Setup Mode' ");
+
+	// And hide if required
+	if (!visible) {
+		TwDefine("'Simulation' visible=false");
+	}
+
+}
+
+GLView::GLView(World *w, ImmunebotsSetup *is):
+        dosimulation(false),
+        paused(true),
         draw(true),
         skipdraw(1),
-        drawfood(false),
         modcounter(0),
         frames(0),
         idlecalled(0),
         lastUpdate(0),
         mouseState(MOUSESTATE_DEFAULT),
-		drawcelltarget(true),
-		saveBackground(false)
+    	lastmousey(0),
+    	lastmousex(0),
+    	mousedownnomove(false),
+    	xoffset(0),
+    	yoffset(0),
+    	scale(1.0),
+		processsetupevents(false),
+		fastforwardtime(0)
 {
-	// The additional 1 element is due to a throw-back to the sample screenshot code (originally used to form the TGA header)
-	// However, removing them causes the program to crash when saving the background image for the second time.
-	// No idea why this happens.
-	backgroundImage = (unsigned char *) calloc(1, (conf::HEIGHT*conf::WIDTH*4));
+	world = w;
+	ibs   = is;
 }
 
 GLView::~GLView() {
 
+}
+
+// Switch over to Simulation mode if dosim (always pause)
+void GLView::switchToSimulationMode(bool dosim) {
+	dosimulation = dosim;
+	paused = true;
 }
 
 // Stupid accessor function for a Tw callback to get the current value of the mouse state
@@ -224,7 +321,7 @@ void GLView::changeSize(int w, int h) {
     // Reset the coordinate system before modifying
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0,conf::WWIDTH,conf::WHEIGHT,0,0,1);
+    glOrtho(0,w,h,0,0,1);
 
     //TwWindowSize(w, h);
 
@@ -249,24 +346,51 @@ void GLView::changeSize(int w, int h) {
 // Catch mouse clicks
 void GLView::processMouse(int button, int state, int x, int y) {
 
-	//cout << "Mouse is at " << x << "," << y << "\n";
-
 	if( !TwEventMouseButtonGLUT(button, state, x, y) ) { // event has not been handled by AntTweakBar
+
 		// Left click action depends on the current mouseState
 
-		// Place cell only on button down (state==0)
-		if (mouseState == MOUSESTATE_PLACE_CELL && state == 0) {
-			//cout << "In Mouse state " << mouseState << ": button went " << state << "\n";
-			world->addCell(x, y);
-		} else if (mouseState == MOUSESTATE_DEFAULT && state == 0) {
-			// Tell world that a cell was clicked. World deals with the details of what this means.
-			//cout << "[VIEW] About to call world->ssoc" << "\n";
-			world->setSelectOnCell(x,y);
-			//cout << "[VIEW] Returned from world->ssoc" << "\n";
-		} else if (mouseState == MOUSESTATE_INFECT_CELL && state == 0) {
-			// Clicking on a cell will toggle its infection status
-			cout << "[] toggling infection at " << x << "," << y << "\n";
-			world->setInfection(x,y);
+		// LEFT CLICK: decide between place cell (no move) and pan left/right (with move)
+		if (button == 0) {
+			if (state == 0) {
+				// Pan
+				mousedownnomove = true;
+				lastmousex = x;
+				lastmousey = y;
+			} else if (state == 1) {
+
+				// Mouse button has been pressed, but mouse has not moved -> check state and place cell/trigger infection
+				if ( mousedownnomove ) {
+					if (mouseState == MOUSESTATE_PLACE_CELL) {
+						//cout << "In Mouse state " << mouseState << ": button went " << state << "\n";
+						world->addCell(x+xoffset,y+yoffset);
+					} else if (mouseState == MOUSESTATE_INFECT_CELL) {
+						// We may have panned left/right, so add the offset to the reported mouse position
+						world->toggleInfection(x+xoffset,y+yoffset);
+					}
+				} // Else: Do nothing
+				mousedownnomove = false;
+			}
+
+		}
+
+		// SETUP MODE ONLY:
+		// - Only zoom in/out in simulation mode - causes too many problems in setup mode
+		if ( dosimulation ) {
+			// WHEEL UP
+			if (button == 3) {
+				// Zoom in. Wheel is 3 and 4: N.B probably system-specific
+				scale += scale*0.05;
+				lastmousex = x;
+				lastmousey = y;
+			// WHEEL DOWN
+			} else if (button == 4) {
+				// Zoom out. Wheel is 3 and 4: N.B probably system-specific
+				scale -= scale*0.05;
+				if (scale<0.001) scale = 0.001; // Don't scale less than 1/1000th
+				lastmousex = x;
+				lastmousey = y;
+			}
 		}
 
 	}
@@ -274,151 +398,258 @@ void GLView::processMouse(int button, int state, int x, int y) {
 
 // This is called if the mouse is move whilst EITHER button is down
 void GLView::processMouseActiveMotion(int x, int y) {
-	// Update internal mouse tracker
-	mouseX = x; mouseY = y;
+
 	// Try sending to Tw
-	//printf("DEBUG: Mouse is at (%i,%i)\n", x, y);
-	if ( !TwEventMouseMotionGLUT(x, y) ) {
+	if ( TwEventMouseMotionGLUT(x, y) ) return;
+
+	// Button is down, but mouse has moved -> suggests we are panning
+	mousedownnomove = false;
+
+	if (!dosimulation) {
 		// Moving whilst left button is held down depends on the current mouseState
 		if (mouseState == MOUSESTATE_DRAW_PATCH) {
-			world->setPatch(x,y);
-		} else if (mouseState == MOUSESTATE_PLACE_CELL) {
-			drawCircle(x,y,10);
+			// We may have panned left/right, so add the offset to the reported mouse position
+			world->setPatch(x+xoffset,y+yoffset);
+		//} else if (mouseState == MOUSESTATE_PLACE_CELL) {
+			// We may have panned left/right, so add the offset to the reported mouse position
+			//drawCircle(x+xoffset,y+yoffset,10);
+		} else {
+			// Pan left/right
+			xoffset += (lastmousex-x);
+			yoffset += (lastmousey-y);
+			lastmousex = x;
+			lastmousey = y;
 		}
 	}
+
+	if (dosimulation) {
+		// At the moment, just pan left/right
+		xoffset += (lastmousex-x);
+		yoffset += (lastmousey-y);
+		lastmousex = x;
+		lastmousey = y;
+	}
+
 }
 
 // This is called if the mouse is moved whilst no button is pressed.
 void GLView::processMousePassiveMotion(int x, int y) {
-	// Update internal mouse tracker
-	mouseX = x; mouseY = y;
 	// Try sending to Tw
 	if ( !TwEventMouseMotionGLUT(x, y) ) {
-		// If in states 2 (place cell) or 3 (make infected) or 0 (default) then check if mouse is currently above a cell
-		if (mouseState == MOUSESTATE_DEFAULT || mouseState == MOUSESTATE_PLACE_CELL || mouseState == MOUSESTATE_INFECT_CELL) {
+		// TODO: Allow selection on CTL?
+		// Something like: world->setFocusOnCell(x,y); ?
+		if (mouseState == MOUSESTATE_INFECT_CELL) {
 			// Let world deal with details of a mouse click on a cell
-			world->setFocusOnCell(x,y);
+			//world->toggleInfection(x,y);
 		}
 	}
 }
 
 void GLView::processNormalKeys(unsigned char key, int x, int y) {
 
-    if (key == 27)
-        exit(0);
-    else if (key=='r') {
-        world->reset();
-        printf("Agents reset\n");
-    } else if (key=='p') {
-        //pause
-        paused= !paused;
-    } else if (key=='d') {
-        //drawing
-    	toggleDrawing();
-    } else if (key==43) {
-        //+
-        skipdraw++;
-    } else if (key==45) {
-        //-
-        skipdraw--;
-    } else if (key=='f') {
-        drawfood=!drawfood;
-    } else if (key=='c') {
-        world->setClosed( !world->isClosed() );
-        printf("Environment closed now = %i\n",world->isClosed());
-    } else {
-        printf("Unknown key pressed: %i\n", key);
+	// Need to first send keyboard command to the Tw bar, automatically return if over
+	// the menu. (Why? When typing in a 'q' for the filename don't want to quit!).
+	if ( TwEventKeyboardGLUT(key,x,y) ) return;
+
+	// Keys for all modes: exit and reset view
+    if (key == 27) exit(0);
+
+    if (key=='r') {
+   		// reset view
+   		scale   = 1.0;
+   		xoffset = 0.0;
+   		yoffset = 0.0;
     }
+
+    if (key=='d') {
+   		//drawing
+   		toggleDrawing();
+    }
+
+    // Keys for setup
+	// Currently none (could do: d=draw patch mode, i=infect cell mode, a=autoplace cells, c=manual place cells)
+
+	// Keys for simulation
+	if (dosimulation) {
+
+		if (key=='p') {
+			//pause
+			paused= !paused;
+		} else if (key==43) {
+			//+
+			skipdraw++;
+		} else if (key==45) {
+			//-
+			skipdraw--;
+		} else {
+	        printf("Unknown key pressed: %i\n", key);
+	    }
+
+	}
+
 }
 
-// Everytime handleIdle is called, the world is updated, a wait MIGHT happen, and the scene MIGHT be rendered
+void GLView::processSpecialKeys(int key, int x, int y) {
+
+	// Should first send to Tw, but there is nothing which is triggered by a "special key"
+	// From API: The special keyboard callback is triggered	when keyboard function or directional keys are pressed.
+
+	// SIMULATION
+	if (dosimulation) {
+		// Skip to next day
+		if (key == GLUT_KEY_RIGHT) {
+			float timeNow = world->worldtime;
+			int nextDay = (int(timeNow / (24*60*60))+1) * 24*60*60;
+			cout << "FF to next day. Time now is "<< timeNow << "s, next day is therefore at "<< nextDay << "s\n";
+			fastforwardtime = nextDay;
+			draw = false;
+		}
+	}
+
+}
+
+// This is called repeatedly by GLUT (if visualisation is enabled) or by the "game loop"
+// The first time handleIdle is called, we execute the function "automaticEventSetup()"
+// Then, every time handleIdle is called:
+//	- we check whether we have reached the end of the simulation (either by reaching the end time, or if there are no active agents left)
+//	- the world is updated (by x seconds)
+//  - if in fast-forward mode, we check whether to come out of fast-forward mode
+//  - if visualisation is enabled, we update the titlebar (every second) and draw the entire scene at a max of 30fps
 void GLView::handleIdle() {
+
+	// Call this the very first time we render the scene
+	//if (!processsetupevents) automaticEventSetup();
+
+    // Check if we have reached the end of the simulation
+	if ( dosimulation && !paused && world->getWorldTime() >= ibs->endTime ) {
+		cout << "Have reached the required world time of " << world->getWorldTime() << "s, ";
+		if (!ibs->useGlut) {
+			cout << "exiting program.\n";
+			exit(0);
+		} else {
+    		cout << "pausing simulation.\n";
+    		paused = true;
+    		draw = true;
+    	}
+	}
+
+    // Check if we have anything left in agents (and later, also in the EventsQueue).
+    if ( dosimulation && !paused && world->numAgents() == 0 ) {
+    	if (!ibs->useGlut) {
+    		// TODO: Graceful exit (remember to flush everything to disk)
+    		cout << "No Active Agents in queue, so exiting program (worldtime:"<<world->getWorldTime()<<"s)\n";
+    		exit(0);
+    	} else {
+    		cout << "No Active Agents left, pausing simulation.\n";
+    		paused = true;
+    		// Need to force a refresh, as we might have hit this spot from a Fast Forward
+    		draw = true;
+    	}
+    }
+
     modcounter++;
     idlecalled++;
-    if (!paused) world->update();
 
-    //show FPS
-    int currentTime = glutGet( GLUT_ELAPSED_TIME );
+    // Only update the world is we're in simulation mode and the simulation isn't paused.
+    if (dosimulation && !paused) world->update();
 
-    // Every 1000ms(==1s), update the titlebar and reset the frames (fps) variable
-    if ((currentTime - lastUpdate) >= 1000) {
-        std::pair<int,int> num_herbs_carns = world->numHerbCarnivores();
-        sprintf( buf, "FPS: %d; CPS: %d; NumCells: %d; OLD:NumAgents: %d Carnivors: %d Herbivors: %d Epoch: %d", frames, idlecalled, world->numCells(), world->numAgents(), num_herbs_carns.second, num_herbs_carns.first, world->epoch() );
-        glutSetWindowTitle( buf );
-        frames = 0;
-        idlecalled = 0;
-        lastUpdate = currentTime;
+    // Check if we are in FF mode and have hit the required world time
+    if ( fastforwardtime > 0 && world->getWorldTime() >= fastforwardtime ) {
+    	// Switch on draw and reset the time to fast forward to
+    	draw = true;
+    	fastforwardtime = 0;
     }
 
-    // Delay draw for a little while (?) if skipdraw (def:1) is <=0.
-    if (skipdraw<=0 && draw) {
-        clock_t endwait;
-        float mult=-0.005*(skipdraw-1); //ugly, ah well
-        endwait = clock() + mult * CLOCKS_PER_SEC ;
-        while (clock() < endwait) {}
-    }
+    // Only do the following if we can draw
+    if ( ibs->useGlut ) {
+    	//show FPS
+    	int currentTime = glutGet( GLUT_ELAPSED_TIME );
 
-    // Draw scene every time, or every (%skipdraw) calls
-    if (draw) {
-        if (skipdraw>0) {
-            if (modcounter%skipdraw==0) renderScene();    //increase fps by skipping drawing
-        }
-        else renderScene(); //we will decrease fps by waiting using clocks
-    } else {
-    	// We render scene in almost every case, but this call won't draw the world, only the menu (I think).
-    	renderScene();
-    }
+		// Every 1000ms(==1s), update the titlebar and reset the frames (fps) variable
+		int dt = (currentTime - lastUpdate);
+		if (dt >= 1000) {
+			sprintf( buf, "FPS: %.2f; CPS: %.2f; NumAgents: %d; Worldtime: %.2f s",
+					float(frames)/dt*1000, float(idlecalled)/dt*1000, world->numAgents(), world->getWorldTime() );
+			glutSetWindowTitle( buf );
+			frames = 0;
+			idlecalled = 0;
+			lastUpdate = currentTime;
+		}
+
+		// Delay draw for a little while (?) if skipdraw (def:1) is <=0.
+		if (skipdraw<=0 && draw) {
+			clock_t endwait;
+			float mult=-0.005*(skipdraw-1); //ugly, ah well
+			endwait = clock() + mult * CLOCKS_PER_SEC ;
+			while (clock() < endwait) {}
+		}
+
+		// Draw scene every time, or every (%skipdraw) calls
+		if (draw) {
+			// Render if skipdraw is >0 or it's been (skipdraw-1?) cycles without a draw. Keeps to 30fps.
+			if (skipdraw<1 || modcounter%skipdraw==0) {
+				if (dt >= 1.0/30.0*frames*1000) renderScene();    //increase fps by skipping drawing
+			}
+		}
+    } // End of HAVE_GLUT
 
 }
 
 
+void GLView::automaticEventSetup() {
+
+	cout << "[GLView] Automatic Events Setting Up..\n";
+	// On start (first processIdle call), do the following: load the set up file, switch to sim mode, start the sim
+	world->loadLayout();
+
+	// Add some CTL (these will eventually "come into the simulation" after a variable delay).
+	world->addAgent( new CTL(100,100) );
+	world->addAgent( new CTL(200,200) );
+	world->addAgent( new CTL(300,300) );
+	world->addAgent( new CTL(400,400) );
+	world->addAgent( new CTL(500,500) );
+	world->resetShadowLayer();
+
+	SwitchToSimulationMode( world );
+	GLVIEW->togglePaused();
+	processsetupevents = true;
+
+	cout << "[GLView] Automatic Events Completed.\n";
+}
+
 void GLView::renderScene() {
-    frames++;
+
+	frames++;
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glDrawBuffer(GL_BACK);
     glReadBuffer(GL_BACK);
     glPushMatrix();
 
-    // Draw the world
-    // If draw is off, then display the stored background picture instead
-    if (draw) {
-    	// Don't draw background scene unless it has changed drastically
-    	if ( world->doBackgroundRefresh() ) {
-    		// Draw the entire world, save to backgroundImage
-    		// Reset first (must be an easier way to do this! Why doesn't glClear do this?
-            glBegin(GL_QUADS);
-            glColor3f(0.9,0.9,1.0);
-            glVertex2f(0,0);
-            glVertex2f(0,conf::HEIGHT);
-            glVertex2f(conf::WIDTH,conf::HEIGHT);
-            glVertex2f(conf::WIDTH,0);
-            glEnd();
-            // Draw background (patches and cells)
-    		world->drawBackground(this, drawfood);
-    		// Save new background
-    		glReadPixels(0, 0, conf::WIDTH, conf::HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, backgroundImage+0);
-    		// Add on the agents (and also the progress bar, if in docelljitter).
-    		world->drawForeground(this);
-    	} else {
-    		// Draw the Background and then the Agents
-        	glRasterPos2i(0,conf::HEIGHT);
-        	glDrawPixels(conf::WIDTH, conf::HEIGHT, GL_BGRA, GL_UNSIGNED_BYTE, backgroundImage+0);
-        	world->drawForeground(this);
-    	}
-    } else {
-    	// Draw the contents of backgroundImage to the screen
-    	glRasterPos2i(0,conf::HEIGHT);
-    	glDrawPixels(conf::WIDTH, conf::HEIGHT, GL_BGRA, GL_UNSIGNED_BYTE, backgroundImage+0);
-    }
+	// Global translate (from holding the mouse down and moving)
+    glTranslatef(-xoffset,-yoffset,0);
 
-    // Save background, if required. Note we do not save the menu to background.
-    if (saveBackground) {
-		//cout << "Pausing and storing the BG image \n";
-		// Don't ask why backgroundImage is +1. Without it, the program crashes on the second call attempt.
-		glReadPixels(0, 0, conf::WIDTH, conf::HEIGHT, GL_BGRA, GL_UNSIGNED_BYTE, backgroundImage+0);
-    	saveBackground = false;
-    	draw = false;
+    // Can't get scaling to work properly
+    glScalef(scale, scale, 1.0f);
+
+    // Draw the world
+    if (draw) {
+		// Draw the entire world
+
+		// Reset first (must be an easier way to do this! Why doesn't glClear do this?
+		glBegin(GL_QUADS);
+		glColor3f(0.1,0.9,1.0);
+		glVertex2f(0,0);
+		glVertex2f(0,conf::HEIGHT);
+		glVertex2f(conf::WIDTH,conf::HEIGHT);
+		glVertex2f(conf::WIDTH,0);
+		glEnd();
+
+		// Draw background: patches (only if in setup mode), and cells.
+		world->drawBackground(this, dosimulation);
+
+		// Add on the active agents
+		world->drawForeground(this);
     }
 
 	// Draw the menu
@@ -429,6 +660,12 @@ void GLView::renderScene() {
     glutSwapBuffers();
 }
 
+void GLView::drawAgent(AbstractAgent* a) {
+	// This just calls the agent's draw function
+	a->drawAgent(this);
+}
+
+/* Scriptbots code: DEPRECATED
 void GLView::drawAgent(const Agent& agent) {
     float n;
     float r = conf::BOTRADIUS;
@@ -491,20 +728,6 @@ void GLView::drawAgent(const Agent& agent) {
         glPopMatrix();
     }
 
-    //draw giving/receiving
-    if(agent.dfood!=0){
-        glBegin(GL_POLYGON);
-        float mag=cap(abs(agent.dfood)/conf::FOODTRANSFER/3);
-        if(agent.dfood>0) glColor3f(0,mag,0); //draw boost as green outline
-        else glColor3f(mag,0,0);
-        for (int k=0;k<17;k++){
-            n = k*(M_PI/8);
-            glVertex3f(agent.pos.x+rp*sin(n),agent.pos.y+rp*cos(n),0);
-            n = (k+1)*(M_PI/8);
-            glVertex3f(agent.pos.x+rp*sin(n),agent.pos.y+rp*cos(n),0);
-        }
-        glEnd();
-    }
 
     // Fix event drawing
     //draw indicator of this agent... used for various events
@@ -595,19 +818,6 @@ void GLView::drawAgent(const Agent& agent) {
     glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo+34,0);
     glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo+34,0);
 
-    //draw giving/receiving
-    if (agent.dfood!=0) {
-
-        float mag=cap(abs(agent.dfood)/conf::FOODTRANSFER/3);
-        if (agent.dfood>0) glColor3f(0,mag,0); //draw boost as green outline
-        else glColor3f(mag,0,0);
-        glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo+36,0);
-        glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo+36,0);
-        glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo+46,0);
-        glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo+46,0);
-    }
-
-
     glEnd();
 
     //print stats
@@ -626,7 +836,7 @@ void GLView::drawAgent(const Agent& agent) {
     sprintf(buf2, "%.2f", agent.repcounter);
     RenderString(agent.pos.x-conf::BOTRADIUS*1.5, agent.pos.y+conf::BOTRADIUS*1.8+36, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
 }
-
+*/
 
 void GLView::drawCell(const Cell &cell) {
 	// Useful variables
@@ -634,30 +844,15 @@ void GLView::drawCell(const Cell &cell) {
 	float r = cell.radius;
 	float * cColor = world->getCellColourFromType(cell.cType);
 
-	// 0. Draw a line from cell origin to the nearestPatch (i.e. the cell target)
-	if ( drawcelltarget ) {
-		glBegin(GL_LINES);
-		glColor3f(0,1,0); // Green
-		glVertex3f(cell.pos.x,cell.pos.y,0);
-		glVertex3f(cell.nearestPatch.x,cell.nearestPatch.y,0);
-		glEnd();
-	}
-
 	// 1. Draw the body (simple circle)
     glBegin(GL_POLYGON);
-    //cout << "Cell colour: " << cColor[0] << ":"<< cColor[1] << ":"<< cColor[2] << "\n";
-    //cout << "Cell (" << &cell << ") type is " << cell.cType << "\n";
     glColor3f(cColor[0],cColor[1],cColor[2]);
     drawCircle(cell.pos.x, cell.pos.y, r);
     glEnd();
 
     // 2. Draw a black line around the circle
     glBegin(GL_LINES);
-    // If the cell is currently "in focus" then draw thicker, orange outline instead of a black thin line
-    if ( cell.isSelected || cell.isInFocus ) {
-    	glColor3f(0.925,0.596,0.145); // Orange outline
-    	glLineWidth(2.0); // make it thick
-    } else glColor3f(0,0,0); // Black outline
+    glColor3f(0,0,0); // Black outline
     // Draw outline as set of 16 lines around the circumference
     for (int k=0;k<17;k++) {
         n = k*(M_PI/8);
@@ -669,24 +864,11 @@ void GLView::drawCell(const Cell &cell) {
 
     // Display cell type, if debug is on
     // TODO: Add debug bool to switch on/off cell loc information?
-    if (1) {
+    if (false) {
     	sprintf(buf2, "%i", cell.cType);
     	RenderString(cell.pos.x-conf::BOTRADIUS*1.5, cell.pos.y+conf::BOTRADIUS*1.8+5, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
     	//sprintf(buf2, "(%.0f,%.0f)", cell.pos.x, cell.pos.y);
     	//RenderString(cell.pos.x-conf::BOTRADIUS*1.5, cell.pos.y+conf::BOTRADIUS*1.8+15, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
-    }
-}
-
-void GLView::drawFood(int x, int y, float quantity) {
-    //draw food
-    if (drawfood) {
-        glBegin(GL_QUADS);
-        glColor3f(0.9-quantity,0.9-quantity,1.0-quantity);
-        glVertex3f(x*conf::CZ,y*conf::CZ,0);
-        glVertex3f(x*conf::CZ+conf::CZ,y*conf::CZ,0);
-        glVertex3f(x*conf::CZ+conf::CZ,y*conf::CZ+conf::CZ,0);
-        glVertex3f(x*conf::CZ,y*conf::CZ+conf::CZ,0);
-        glEnd();
     }
 }
 
@@ -744,21 +926,12 @@ void GLView::drawProgressBar(float completed) {
 
 }
 
-
-void GLView::toggleFoodLayer() {
-	drawfood=!drawfood;
+void GLView::toggleDrawing() {
+	draw = !draw;
 }
 
-void GLView::toggleDrawing() {
-	// When we toggle draw we have the following situations:
-	// 1. Draw is currently on: toggle saveBackground first (this will toggle draw when it is hit)
-	// 2. Draw is currently off: switch on draw.
-	if (draw) {
-		saveBackground = true;
-	} else {
-		world->setBackgroundRefresh(true);
-		draw = true;
-	}
+void GLView::togglePaused() {
+	paused = !paused;
 }
 
 

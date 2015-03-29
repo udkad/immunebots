@@ -3,9 +3,11 @@
 
 namespace conf {
 
-    const int WIDTH = 1800;  //width and height of simulation
-    const int HEIGHT = 1000;
-    const int WWIDTH = 1800;  //window width and height
+	// Absolute maximum size of the world!
+	// Note: most of the time we'll be using a sub-set of this (see World::bounding_m{in,ax})
+    const int WIDTH   = 10000;
+    const int HEIGHT  = 10000;
+    const int WWIDTH  = 1800;  // window width and height
     const int WHEIGHT = 1000;
 
     /* Set the (initial) colour of the different cells */
@@ -13,11 +15,18 @@ namespace conf {
     const float COLOUR_SUSCEPTIBLE[3]      = {1,1,0}; // yellow
     const float COLOUR_INFECTED[3]		   = {0,1,0}; // green
     const float COLOUR_CTL[3]			   = {0,0,1}; // blue
-    const float COLOUR_DEAD[3]			   = {0.2,0.2,0.2}; // darkgray
+    const float COLOUR_DEAD[3]			   = {0.2,0.2,0.2}; // darkgray (black?)
 
 	/* New configuration variables */
     const float SUSCEPTIBLE_PERCENTAGE    = 2.0f;
     const int DEFAULT_NUM_CELLS_TO_ADD    = 1000;
+
+    /* Simulation-related variables */
+    /* Number of timesteps to run based on the slowest rate
+     *   i.e. if slowest rate is 6/min (i.e. 1/10 per second) and #TS is 10, then every timestep will be 1s.
+	 *   Formula: TS time = 1/(rate * #TS)
+     */
+    const int NUMBER_OF_TIMESTEPS = 10;
 
     /* SCRIPTBOTS legacy, but used in Immunebots */
     const int NUMBOTS=5; //initially, and minimally

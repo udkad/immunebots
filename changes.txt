@@ -1,0 +1,10 @@
+== Changelog
+
+Version 1.0
+Backup date: 2011-04-28
+Started to modularise the code - added AbstractAgent class as a template for all Agents (stationary or mobile).
+Immunebots now requires AntTweakBar for the GUI.
+
+Version 0.9
+Backup date: 2011-04-08
+Earliest backup I have of the immunebots source code.

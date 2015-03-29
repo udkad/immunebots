@@ -1,29 +1,40 @@
 #ifndef WORLD_H
 #define WORLD_H
 
-#include "View.h"
-#include "Agent.h"
-#include "Cell.h"
 #include "settings.h"
+#include "helpers.h"
+#include "vmath.h"
+
 #include <vector>
+#include <string>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+
+using namespace std;
+
+/* Forward define what a View and Cell is */
+class AbstractAgent;
+class Cell;
+class ImmunebotsSetup;
+class View;
 
 class World {
 
 public:
-    World();
+    World(ImmunebotsSetup*);
     ~World();
 
     void update();
     void reset();
 
-    //void draw(View* view, bool drawfood, bool drawBackground);
-    void drawBackground(View* view, bool drawfood);
+    void drawBackground(View* view, bool simulationmode);
     void drawForeground(View* view);
 
     bool isClosed() const;
     void setClosed(bool close);
 
 	void setPatch(int x, int y);
+	void setPatch(int index);
 
 	/* CELL COLOURS */
 	float COLOUR_NOT_SUSCEPTIBLE[3];
@@ -36,36 +47,26 @@ public:
 	float SUSCEPTIBLE_PERCENTAGE;
 	int DEFAULT_NUM_CELLS_TO_ADD;
 
-    /**
-     * Returns the number of herbivores and
-     * carnivores in the world.
-     * first : num herbs
-     * second : num carns
-     */
-    std::pair<int,int> numHerbCarnivores() const;
-
 	// World state is currently unused
     int WorldState;
     int numAgents() const;
     int numCells() const;
-    int epoch() const;
+    float worldtime;
+
+	float getWorldTime();
 
     void addCell(int x, int y);
     void addRandomCells(int num);
+    void addAgent(AbstractAgent *);
 
-    void resetShadowLayer(Cell * c, Vector2f oldpos);
+    void resetShadowLayer();
     void setCellShadow(Cell *c);
     void resetCellShadow(Cell *c);
     void _setCellShadow(Cell *c, Cell * value);
 
-    bool isOverCell(int x, int y);
-    Cell * getCell(int x, int y);
-    void setSelectOnCell(int x, int y);
-    void setFocusOnCell(int x,int y);
-    void setInfection(int x, int y);
-
-    Cell * selectedCell;
-    Cell * inFocusCell;
+    bool isOverCell(int x, int y); // TODO: Make private?
+    Cell * getCell(int x, int y); // TODO: Make private?
+    void toggleInfection(int x, int y);
 
     void resetCellColours();
     float * getCellColourFromType(int ct);
@@ -73,17 +74,21 @@ public:
     void resetCellSusceptibility();
     void clearAllCells();
 
-    /* JITTER */
-    void startJitter();
+    /* Place cells on patches (previously called: dojitter) */
+    void placeCells();
 
-    // If true, View will call drawBackground() and save the background
-    bool doBackgroundRefresh();
-    void setBackgroundRefresh(bool r);
+    /* Save information to file */
+    void saveLayout();
+    void loadLayout();
 
 private:
-    void setInputs();
-    void processOutputs();
-    void brainsTick();  //takes in[] to out[] for every agent
+
+    // Bounding box
+    Vector2<int> bounding_min;
+    Vector2<int> bounding_max;
+
+    void setInputs(float timestep);
+    void processOutputs(float timestep);
 
     void writeReport();
 
@@ -91,37 +96,42 @@ private:
     void addNewByCrossover();
     void addRandomBots(int num);
 
+    ImmunebotsSetup * ibs;
     int modcounter;
-    int current_epoch;
-    int idcounter;
 
-    std::vector<Agent> agents;
+    // This is the active agents vector
+    std::vector<AbstractAgent*> agents;
 
     std::vector<Cell*> cells;
-    int cidcounter;
 
     void copyColourArray(float wc[], const float cc[]);
 
-    // food
-    int FW;
-    int FH;
-    int fx;
-    int fy;
-    float food[conf::WIDTH/conf::CZ][conf::HEIGHT/conf::CZ];
-    Cell * CellShadow[conf::WIDTH][conf::HEIGHT];
+    // Cell * CellShadow[conf::WIDTH][conf::HEIGHT]; // Old C-style way
+    vector< vector<Cell*> > CellShadow;
 
     /* PATCH */
-    int patch[conf::WIDTH][conf::HEIGHT];
-    std::vector<int> patchVector;
+    // If we use bools instead of ints, then 1bit will be used for each element, instead of 4 bytes!
+    vector< vector<bool> > patch; 	// great for lookups
+    vector<int> patchV;				// faster for loading/saving and drawing
 
-    /* JITTER */
-    bool docelljitter;
-    int cellJitterIteration;
+    void resetBoundingBox();
+    void checkBoundingBox(int x, int y);
 
-    bool dobackgroundrefresh;
+    bool isNearPatch(int x, int y);
 
-    bool CLOSED; //if environment is closed, then no random bots are added per time interval
-    float goc[conf::WIDTH][conf::HEIGHT]; // This is the Grid of Cells
+    bool CLOSED; // if environment is closed, then no random bots are added per time interval
+
+	// For serialisation: We're only interested in the cells and patch vectors, and the bounding min/max.
+    friend class boost::serialization::access;
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version) {
+        ar & cells;
+        ar & patchV;
+        ar & bounding_max;
+        ar & bounding_min;
+    }
+
 };
+
 
 #endif // WORLD_H

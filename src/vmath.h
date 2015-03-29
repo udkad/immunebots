@@ -71,6 +71,10 @@
 #include <iostream>
 #include <cassert>
 
+// To serialise Vector2f
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+
 #ifdef VMATH_NAMESPACE
 namespace VMATH_NAMESPACE {
 #endif
@@ -459,6 +463,17 @@ public:
 		lhs << "[" << rhs.x << "," << rhs.y << "]";
 		return lhs;
 	}
+
+private:
+	// For serialisation:
+    friend class boost::serialization::access;
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version) {
+        ar & x;
+        ar & s;
+        ar & t;
+        ar & y;
+    }
 
 };
 

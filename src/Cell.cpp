@@ -6,16 +6,19 @@
  */
 
 #include "Cell.h"
+#include "World.h"
+#include "Virion.h"
 
 #include "settings.h"
 #include "helpers.h"
+
 #include <stdio.h>
 #include <iostream>
 #include <string>
 
 using namespace std;
 
-// Cells are like Agents, but they can't move (much)
+// These cells are AbstractAgents, even though they are only "active" if infected. They also don't move at all.
 Cell::Cell() {
 
 	// Cells have a position, and a speed
@@ -26,17 +29,56 @@ Cell::Cell() {
     nearestPatch = Vector2f(conf::WIDTH/2, conf::HEIGHT/2);
     radius = conf::BOTRADIUS;
     cType = CELL_NOT_SUSCEPTIBLE;
-    isSelected = false;
-    isInFocus = false;
-    isInfected = false;
 
-    //in.resize(INPUTSIZE, 0);
-    //out.resize(OUTPUTSIZE, 0);
+    // Rates (in secs)
+    r_vproduction = 0.0023;// = 200 * 1/(24*60*60); // 200 virions per day
+    r_death = 0.000005787;// = 1/2*1/(24*60*60); // Infected cell death rate: Half life of approx 2 days
+
+    active = false;
+    lifespan = 0.0;
+
 }
 
-Cell::~Cell() {
+Cell::~Cell() {}
+
+/* AbstractAgent functions */
+
+// Cells are not drawn using this function
+void Cell::drawAgent(GLView * v) {
 }
 
+// Infected cells take input, N and S do nothing
+void Cell::setInput(float dt, World * w) {
+	lifespan += dt;
+}
+
+// Infected cells produce virions
+void Cell::doOutput(float dt, World *w) {
+
+	if (cType == CELL_INFECTED) {
+		// Infected cells can die or produce virions
+		if ( randf(0,1) <= r_death*dt ) {
+			setKilled();
+		} else if ( randf(0,1) <= r_vproduction*dt ) {
+			Virion *v = new Virion(this);
+			w->addAgent( v );
+		}
+	}
+
+}
+
+void Cell::printInfo() {
+	cout << this << " Cell ";
+	printf( "(%.2fs)\n", lifespan);
+}
+
+/* Other functions */
+
+void Cell::setKilled() {
+	cType = CELL_DEAD;
+	dead = true;
+	active = false; // Will be removed from the ActiveAgents queue
+}
 
 void Cell::setCellType(int newType) {
 	// If there is a change from cellType to newType
@@ -46,91 +88,30 @@ void Cell::setCellType(int newType) {
 }
 
 void Cell::setSusceptible(float sp) {
-	if ((rand() % 10001)/100.0 <= sp) {
+	if ( randf(0.0,1.0) < sp/100.0) {
 		setCellType(CELL_SUSCEPTIBLE);
 	}
 }
 
-void Cell::setInfected(bool i) {
-	isInfected = i;
-	if (isInfected) {
+bool Cell::isInfected() {
+	return (cType == CELL_INFECTED);
+}
+
+bool Cell::isSusceptible() {
+	return (cType == CELL_SUSCEPTIBLE);
+}
+
+void Cell::setInfected(bool infected) {
+	if (infected) {
 		setCellType(CELL_INFECTED);
 	} else {
 		setCellType(CELL_NOT_SUSCEPTIBLE);
 	}
+	active = infected;
 }
 
-void Cell::toggleSelected() {
-	isSelected = !isSelected;
-}
-
-void Cell::setInFocus(bool f) {
-	isInFocus = f;
-}
-
+// If infected, then cell is an ActiveAgent
 void Cell::toggleInfection() {
-	setInfected(!isInfected);
+	setInfected( !(cType==CELL_INFECTED) );
 }
-
-// Allow a 1 in patchNum chance of setting this (new) patch as the Cell's preferred home"
-void Cell::setNewPatch(int x, int y, int patchNum) {
-	//cout<< "Will I choose new patch at ("<<x<<","<<y<<")? 1 in "<< 1.0/patchNum << " chance.\n";
-	if ( randf(0,1) < 1.0/patchNum ) {
-		nearestPatch = Vector2f( x, y );
-	}
-}
-
-// Given a vector of patches, choose one at random, get the patch location and set as "nearest" patch
-void Cell::chooseRandomPatch( std::vector<int> patchVector ) {
-	// Randomly select an int between 0 and patchVector.size()
-	int randomPatchI = randi(0,patchVector.size());
-	//randomPatchI
-	int patchI = patchVector[randomPatchI];
-	nearestPatch = Vector2f( int(patchI / conf::WIDTH), patchI % conf::WIDTH );
-}
-
-// TODO: This needs to be renamed I think
-void Cell::setClosestPatch(int * patch) {
-
-	// Find nearest patch to home into..
-	float nearest = -1; // Very big number to start with
-	int nearestX = 0;
-	int nearestY = 0;
-
-	// Exhaustive search - loop through entire patch directory until we find the closest dot.
-	for (int i=0; i<conf::WIDTH; i++) {
-		for (int j=0; j<conf::HEIGHT; j++) {
-			if ( *(patch + conf::HEIGHT*i + j) == 1 ) {
-				// Calculate the distance from patch (i,j) to x,y
-				float newdistance = pow((i-pos.x),2)+pow((j-pos.y),2);
-				if (newdistance<nearest || nearest == -1) {
-					nearestX = i;
-					nearestY = j;
-					nearest = newdistance;
-				}
-			}
-		}
-	}
-	nearestPatch = Vector2f( nearestX, nearestY );
-}
-
-// Given a new patch location, check if it is closer than nearestPatch (and set new nearestPatch if not)
-void Cell::checkClosestPatch(int x, int y) {
-	float d1 = pow((pos.x-nearestPatch.x),2) + pow((pos.y-nearestPatch.y),2);
-	float d2 = pow((pos.x-x),2) + pow((pos.y-y),2);
-	if ( d1 > d2 ) {
-		nearestPatch = Vector2f( x, y );
-	}
-}
-
-/* UNUSED FUNCTIONS */
-
-void Cell::printSelf() {
-    printf("I am a cell");
-}
-
-void Cell::initEvent() {
-
-}
-
 
