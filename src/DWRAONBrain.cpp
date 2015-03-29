@@ -2,8 +2,7 @@
 using namespace std;
 
 
-Box::Box()
-{
+Box::Box() {
 
     w.resize(CONNS,0);
     id.resize(CONNS,0);
@@ -25,8 +24,7 @@ Box::Box()
     target=0;
 }
 
-DWRAONBrain::DWRAONBrain()
-{
+DWRAONBrain::DWRAONBrain() {
 
     //constructor
     for (int i=0;i<BRAINSIZE;i++) {
@@ -36,7 +34,6 @@ DWRAONBrain::DWRAONBrain()
         boxes[i].out= a.out;
         boxes[i].target= a.target;
         boxes[i].type= a.type;
-        boxes[i].kp= a.kp;
         boxes[i].bias= a.bias;
         for (int j=0;j<CONNS;j++) {
             boxes[i].notted[j]= a.notted[j];
@@ -77,8 +74,7 @@ void DWRAONBrain::init()
 
 }
 
-void DWRAONBrain::tick(vector< float >& in, vector< float >& out)
-{
+void DWRAONBrain::tick(vector< float >& in, vector< float >& out) {
 
     //do a single tick of the brain
 
@@ -185,7 +181,7 @@ DWRAONBrain DWRAONBrain::crossover(const DWRAONBrain& other)
     //this could be made faster by returning a pointer
     //instead of returning by value
     DWRAONBrain newbrain(*this);
-    
+
     for (int i=0;i<newbrain.boxes.size(); i++) {
         newbrain.boxes[i].bias= randf(0,1)<0.5 ? this->boxes[i].bias : other.boxes[i].bias;
         newbrain.boxes[i].kp= randf(0,1)<0.5 ? this->boxes[i].kp : other.boxes[i].kp;
@@ -199,4 +195,3 @@ DWRAONBrain DWRAONBrain::crossover(const DWRAONBrain& other)
     }
     return newbrain;
 }
-
