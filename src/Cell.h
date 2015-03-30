@@ -26,8 +26,8 @@ class Cell: public AbstractAgent {
 
 public:
 	Cell();
-	Cell(int x, int y);
-	void init();
+	Cell(int x, int y, ImmunebotsSetup*);
+	void init(ImmunebotsSetup*);
 	virtual ~Cell();
 
     // The following are AbstractAgent classes, which we make concrete in this class
@@ -35,11 +35,9 @@ public:
 	void setInput(float dt, World * const);
 	void doOutput(float dt, World * const);
 	void printInfo();
-	string getAgentType() { return string("Cell"); }
 
     // Variables to define the cell
     float radius;
-	int cType; 	// This is one of the CELL_ types (should enumerate?)
 	float lastScanTime; // last time this cell was scanned by CTL
 
 	void setCellType(int newType);
@@ -53,19 +51,6 @@ public:
 	bool isInfected();
 	bool isSusceptible();
 
-    // Keep a record of where we're trying to get to
-    //Vector2f nearestPatch;
-    //void setClosestPatch(int * patch);
-    //void checkClosestPatch(int x, int y);
-    //void chooseRandomPatch( const std::vector<int> patchVector );
-    //void setNewPatch(int x, int y, int patchNum);
-
-    // Allowed values for cType:
-    static const int CELL_NOT_SUSCEPTIBLE = 0;
-    static const int CELL_SUSCEPTIBLE     = 1;
-    static const int CELL_INFECTED		  = 2;
-    static const int CELL_CTL			  = 3;
-    static const int CELL_DEAD			  = 99;
     // Note: Ensure that Cell::setColourFromType() has a case for all of the above Cell Types
 
 private:
@@ -73,7 +58,6 @@ private:
 	/* Rate parameters, in seconds*/
 	float r_vproduction; // Rate of virion production
 	float r_death; // Infected cell death rate
-	int id;
 
 	// For serialisation:
     friend class boost::serialization::access;
@@ -81,17 +65,16 @@ private:
     void serialize(Archive & ar, const unsigned int version) {
     	ar & boost::serialization::base_object<AbstractAgent>(*this);
 
-		ar & id;
     	ar & pos;
         ar & angle;
         ar & speed;
         ar & radius;
+        ar & agent_type;
         ar & active;
         ar & drawable;
         ar & draw_priority;
         ar & lifespan;
 
-        ar & cType;
     }
 
 

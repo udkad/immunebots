@@ -13,22 +13,22 @@
 // c.f. Infected cells, which are AbstractAgent->Cells but stored in the Cells pointer list, cells.
 BOOST_CLASS_EXPORT_GUID(CTL, "CTL");
 
-CTL::CTL() {
-	init();
-}
+// Don't call this
+CTL::CTL() { }
 
-CTL::CTL(int x, int y) {
-	init();
+CTL::CTL(int x, int y, ImmunebotsSetup * ibs) {
+	init(ibs);
 	pos.x = x;
 	pos.y = y;
 }
 
-void CTL::init() {
+void CTL::init(ImmunebotsSetup * ibs) {
 	// CTL have a position, and a speed
     pos   = Vector2f(randf(0,conf::WIDTH),randf(0,conf::HEIGHT));
     angle = randf(-M_PI,M_PI);
-    speed = 1.0;
+    speed = ibs->getParm("r_ctlspeed",1.0f);
     radius = conf::BOTRADIUS;
+    agent_type = AbstractAgent::AGENT_CTL;
 
     currentCell = 0;
     lastCell = 0;
@@ -56,10 +56,8 @@ void CTL::drawAgent(GLView * v) {
 	if (!drawable) return;
 
 	// 1. Draw the body (simple circle)
-    glBegin(GL_POLYGON);
     glColor4f(conf::COLOUR_CTL[0],conf::COLOUR_CTL[1],conf::COLOUR_CTL[2], 1.0);
-    v->drawCircle(pos.x, pos.y, draw_priority, radius);
-    glEnd();
+    v->drawCircle(pos.x, pos.y, draw_priority, radius, false);
 
     // 2. Show which state the CTL is in
     /*
@@ -124,13 +122,17 @@ void CTL::setInput(float dt, World * w) {
 		timer -= dt;
 		// Not sure when the CTL actually kills the cell: at some point during the 30mins!
 		if (currentCell != 0 &&  !currentCell->isDead() ) {
-			if ( randf(0,1) <= (1.0/timer)) currentCell->setKilled();
+			if ( randf(0,1) <= (1.0/timer)) {
+				// Kill cell and notify the world event reporter
+				currentCell->setKilled();
+				w->EventReporter(World::EVENT_INFECTEDDEATH_LYSIS);
+			}
 		}
 		if (timer <= 0) {
 			// Cell must be dead by now.
 			currentCell->setKilled();
 			// CTL starts moving
-			cout << this << " CTL has killed cell ("<< currentCell << "); moving on\n";
+			//cout << this << " CTL has killed cell ("<< currentCell << "); moving on\n";
 			state = STATE_MOVE;
 			angle = randf(-M_PI,M_PI);
 			timer = getPersistenceLength();
@@ -156,25 +158,27 @@ void CTL::doOutput(float dt, World *w) {
 
 		// Reset the angle once we reach the end of our persistence length
 		if ( timer <= 0 ) {
-			angle = randf(-M_PI, M_PI);
+			angle += randf(0.0, M_PI)-M_PI/2.0;
 			timer = getPersistenceLength();
 		}
 
 		// TODO: Change this (make it switchable: deactivate, bound, wrap)
 
 		// OFFSCREEN 1: Torus wrap the edge of the world
+		/* INCORRECT: Needs to check if within bounding bound, not 0-1800 and 0-1000
 	    if (pos.x<0) 		pos.x=1800+pos.x;
 	    if (pos.x>=1800) 	pos.x=pos.x-1800;
 	    if (pos.y<0) 		pos.y=1000+pos.y;
 	    if (pos.y>=1000)	pos.y=pos.y-1000;
+	    */
 
 	    // OFFSCREEN 2: Bounce off the boundary box (default behaviour)
-	    if (pos.x>w->bounding_max.x) { 	pos.x=w->bounding_max.x; angle += M_PI; }
-	    if (pos.x<w->bounding_min.x) { 	pos.x=w->bounding_min.x; angle += M_PI; }
-	    if (pos.y>w->bounding_max.y) { 	pos.y=w->bounding_max.y; angle += M_PI; }
-	    if (pos.y<w->bounding_min.y) {	pos.y=w->bounding_min.y; angle += M_PI; }
+	    if      (pos.x>w->bounding_max.x) { pos.x=w->bounding_max.x; angle += M_PI; }
+	    else if (pos.x<w->bounding_min.x) { pos.x=w->bounding_min.x; angle += M_PI; }
+	    if      (pos.y>w->bounding_max.y) { pos.y=w->bounding_max.y; angle += M_PI; }
+	    else if (pos.y<w->bounding_min.y) {	pos.y=w->bounding_min.y; angle += M_PI; }
 
-		// OFFSCREEN 3: Kill the CTL
+		// OFFSCREEN 3: Kill the CTL if it leaves the matrix (really? why?)
 		if ( pos.x < 0 || pos.x >= conf::WIDTH || pos.y < 0 || pos.y >= conf::HEIGHT ) {
 			active = false;
 		}

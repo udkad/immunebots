@@ -12,6 +12,9 @@ namespace conf {
 
     const float FAR_PLANE = 10.0; // The extent of the z-axis
 
+    // GL options
+	const bool USE_VERTEX_ARRAY = true;
+
     /* Set the (initial) colour of the different cells */
     const float COLOUR_NOT_SUSCEPTIBLE[4]  = {1,1,1,1}; // white
     const float COLOUR_SUSCEPTIBLE[4]      = {1,1,0,1}; // yellow
@@ -20,8 +23,8 @@ namespace conf {
     const float COLOUR_DEAD[4]			   = {0.2,0.2,0.2,1}; // darkgray (black?)
 
 	/* New configuration variables */
-    const float SUSCEPTIBLE_PERCENTAGE    = 2.0f;
-    const int DEFAULT_NUM_CELLS_TO_ADD    = 1000;
+    const float CTL_DENSITY              = 100.0f;
+    const int   DEFAULT_NUM_CELLS_TO_ADD = 1000;
 
     /* Simulation-related variables */
     /* Number of timesteps to run based on the slowest rate
@@ -34,13 +37,17 @@ namespace conf {
     const int NUMBOTS=5; //initially, and minimally
     const float BOTRADIUS=5; //for drawing
 
+    /*******************************
+     *     D E P R E C A T E D     *
+     *******************************/
+
     /* EVERYTHING BELOW HERE IS FROM SCRIPTBOTS (DEPRECATED) */
     const int CZ = 50; //cell size in pixels, for food squares. Should divide well into Width Height
 
     const float BOTSPEED= 0.1;
     const float SPIKESPEED= 0.005; //how quickly can attack spike go up?
     const float SPIKEMULT= 0.5; //essentially the strength of every spike impact
-    const int BABIES=2; //number of babies per agent when they reproduce
+    const int   BABIES=2; //number of babies per agent when they reproduce
     const float BOOSTSIZEMULT=2; //how much boost do agents get? when boost neuron is on
     const float REPRATEH=7; //reproduction rate for herbivours
     const float REPRATEC=7; //reproduction rate for carnivours
@@ -55,7 +62,7 @@ namespace conf {
     const float FOODINTAKE= 0.00325; //how much does every agent consume?
     const float FOODWASTE= 0.001; //how much food disapears if agent eats?
     const float FOODMAX= 0.5; //how much food per cell can there be at max?
-    const int FOODADDFREQ= 30; //how often does random square get to full food?
+    const int   FOODADDFREQ= 30; //how often does random square get to full food?
 
     const float FOODTRANSFER= 0.001; //how much is transfered between two agents trading food? per iteration
     const float FOOD_SHARING_DISTANCE= 50; //how far away is food shared between bots?

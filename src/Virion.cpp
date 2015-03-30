@@ -12,19 +12,20 @@ Virion::Virion() {
 	// Auto-generated constructor stub
 }
 
-Virion::Virion(Cell *pCell) {
+Virion::Virion(Cell *pCell, ImmunebotsSetup *ibs) {
 
 	// Set random direction
 	angle = randf(-M_PI, M_PI);
-	speed = 0.1; // TODO: we should be able to change this! (before: 1.0)
+	speed = ibs->getParm("r_vspeed", 0.1f);
 
 	pos 	= pCell->pos;
 	active 	= true;
 	dead 	= false;
 	lifespan = 0.0;
+    agent_type = AGENT_VIRION;
 
 	r_death  = 1/6 * 1/(60*60); 	/* 6 hours to clearance */
-	r_infect = 0.1; 				/* No idea, arbitrary value (ensure infection when hitting a cell) */
+	r_infect = ibs->getParm("r_vinfect", 0.1f); /* No idea, arbitrary value (ensure infection when hitting a cell) */
 
 	parentCell 	= pCell;
 	currentCell = 0; // Although technically we're on the parent when we are created
@@ -50,7 +51,7 @@ void Virion::drawAgent(GLView * v) {
 	// It still only infects if the center (pos.{x,y}) is over a susceptible cell.
 
 	// Draw a point or a line
-	bool drawPoint = false;
+	bool drawPoint = true;
 
 	if (drawPoint) {
 
@@ -64,32 +65,17 @@ void Virion::drawAgent(GLView * v) {
 
 		int r = 1;
 		// 1. Draw the body (simple circle)
-		glBegin(GL_POLYGON);
-		glColor3f(0.0,1.0f,0.0);
-		v->drawCircle(pos.x, pos.y, draw_priority, r);
-		glEnd();
-
-		// 2. Draw a black line around the circle
-		glBegin(GL_LINES);
-		glColor3f(0,0,0); // Black outline
-		// Draw outline as set of 16 lines around the circumference
-		float n;
-		for (int k=0;k<17;k++) {
-			n = k*(M_PI/8);
-			glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), draw_priority+0.001);
-			n = (k+1)*(M_PI/8);
-			glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), draw_priority+0.001);
-		}
-		glEnd();
+		glColor4f(0.0,1.0f,0.0,1.0);
+		v->drawCircle(pos.x, pos.y, draw_priority, r, true);
 	}
 
-    /*	// This should be made optional. Draw green line from parent cell to virion.
+    	// This should be made optional. Draw green line from parent cell to virion.
 		glBegin(GL_LINES);
 		glColor3f(0,1,0);
 		glVertex2f(parentCell->pos.x,parentCell->pos.y);
 		glVertex2f(pos.x, pos.y);
 		glEnd();
-     */
+
 }
 
 void Virion::setInput(float dt, World *w) {
@@ -99,7 +85,23 @@ void Virion::setInput(float dt, World *w) {
 	// Check if on a susceptible cell, if so then chance of infection (during Output phase)
 	lifespan += dt;
 	if ( w->isOverCell(pos.x, pos.y) ) {
-		currentCell = w->getCell(pos.x, pos.y);
+		Cell * newCell = w->getCell(pos.x, pos.y);
+
+		if (newCell != currentCell){
+			if (currentCell!=0 && currentCell->isSusceptible()) {
+				// Last cell was a susceptible cell - failed to infect so log "attempt"
+				w->EventReporter(World::EVENT_FAILEDINFECTION);
+			}
+		}
+		currentCell = newCell;
+
+	} else if (currentCell != 0) {
+		// Now not on a cell, and didn't manage to infect the previous cell
+		if (currentCell->isSusceptible()) {
+			// Last cell was a susceptible cell - failed to infect so log "attempt"
+			w->EventReporter(World::EVENT_FAILEDINFECTION);
+		}
+		currentCell = 0;
 	}
 }
 
@@ -114,16 +116,15 @@ void Virion::doOutput(float dt, World *w) {
 		cout << this << " Virion DEAD!\n";
 		dead = true;
 		active = false; // Will be removed from the ActiveAgents queue (I think this is the only reference to the virion!)
-	} else if ( currentCell!= 0
+	} else if ( currentCell != 0
 			&& !currentCell->isInfected()
 			&&  currentCell->isSusceptible()
-			&& (randf(0,1) <= r_infect*dt) ) {
-		//cout << this << " Virion Trying to infect cell " << currentCell << endl;
-		// Chance of infection: also add newly infected cell to ActiveAgents
-		currentCell->setInfected(true);
-		w->addAgent(currentCell);
-		active = false;
-		dead = true;
+			&&  randf(0,1) <= r_infect*dt ) {
+				// Chance of infection: also add newly infected cell to ActiveAgents
+				currentCell->setInfected(true);
+				w->addAgent(currentCell);
+				active = false;
+				dead = true;
 	} else {
 		// Just move
 		pos.x += dt*speed*sin(angle);

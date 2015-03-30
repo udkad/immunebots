@@ -25,18 +25,17 @@
 
 using namespace std;
 
-World::World( ImmunebotsSetup* is ):
-		modcounter(0),
-		CLOSED(false),
-		worldtime(0.0)
-{
-	ibs = is;
+World::World(  ) {
+	worldtime = 0.0;
+
+	// Generate a unique ID for this world
+	UID = randi(0,RAND_MAX);
 
 	// Setup the world colours from the conf
 	resetCellColours();
 
 	// Copy over the other variables from settings (manual!)
-	SUSCEPTIBLE_PERCENTAGE   = conf::SUSCEPTIBLE_PERCENTAGE;
+	CTL_DENSITY              = conf::CTL_DENSITY;
 	DEFAULT_NUM_CELLS_TO_ADD = conf::DEFAULT_NUM_CELLS_TO_ADD;
 
     // Initialise the patch (infected island) and CellShadow layers
@@ -48,8 +47,16 @@ World::World( ImmunebotsSetup* is ):
     // Clear the patchVector as well
     patchV.clear();
 
+    // Create the statistics module
+	stats = (Statistics*) malloc( sizeof( Statistics ) );
+	updateStats(true);
+
     // Initialise the boundary box (to very wrong numbers)
     resetBoundingBox();
+}
+
+void World::setImmunebotsSetup(ImmunebotsSetup* is) {
+	ibs = is;
 }
 
 World::~World() {
@@ -102,11 +109,18 @@ void World::resetBoundingBox() {
 }
 
 void World::checkBoundingBox(int x,int y) {
-	int b = 50;
+	int b = 15;
 	if ( x - b < bounding_min.x ) bounding_min.x = max(0, x-b);
 	if ( y - b < bounding_min.y ) bounding_min.y = max(0, y-b);
 	if ( x + b > bounding_max.x ) bounding_max.x = min(x+b, conf::WIDTH);
 	if ( y + b > bounding_max.y ) bounding_max.y = min(y+b, conf::HEIGHT);
+
+	// Set bounding box area (Note: margin is hard-coded as 15um, but as a cell is "detected" at its origin, we take 5um (radius) off).
+	// Note: This is fairly specific to ALL cells having a radius of 5um.
+	if ( bounding_max.x > bounding_min.x ) {
+		stats->area_mm2 = (float)((bounding_max.x - bounding_min.x - 2*(b-5)) * (bounding_max.y - bounding_min.y - 2*(b-5))) / 1000000.0;
+	}
+
 }
 
 // Overload the above function (single int, converted to an x,y coord)
@@ -120,9 +134,7 @@ float World::getWorldTime() {
 	return worldtime;
 }
 
-void World::update() {
-
-	modcounter++;
+void World::update(bool writeReport) {
 
 	// In each update cycle, do the following:
 	//  1. Process time
@@ -131,19 +143,18 @@ void World::update() {
 	//  4. Process actions for the active agents list, i.e. allow agents to move/update their position, produce offspring, die
     //  5. Tidy up (remove dead stuff)
 
+	// Write the report at time 0 and every 60 (? seems to be 50) thereafter.
+	if (writeReport || worldtime==0.0) {
+		this->writeReport(worldtime==0.0);
+	}
+
     // 1. Process time, including recalculating the timestep
 	// Update the worldtime by timestep seconds
-	// TODO: The Timestep is determined by 1/conf::TIMESTEPS# of the the fastest rate
+	// TODO: The Timestep should be determined by 1/conf::TIMESTEPS# of the the fastest rate
 	float timestep = 1.0;
 	worldtime += timestep;
 
-	if (modcounter%1000==0) writeReport();
-
-    if (modcounter>=10000) {
-        modcounter=0;
-    }
-
-    // TODO: 2. Process events for this timestep
+	// TODO: 2. Process events for this timestep in the (currently non-existent) EventsQueue
 
     // 3. Give input to every agent
     setInputs(timestep);
@@ -151,11 +162,11 @@ void World::update() {
     // 4. Read output and process consequences of bots on environment
     processOutputs(timestep);
 
-    // 5. Tidy up
+    // 5. Tidy Up
     vector<AbstractAgent*>::iterator iter = agents.begin();
     while ( iter != agents.end() ) {
 
-    	// Finally, if this agent is inactive, remove from the (and use the newly returned iterator)
+    	// If this agent is inactive, remove from the vector (and use the newly returned iterator)
     	if ( ((AbstractAgent*)(*iter))->isActive() ) {
     		++iter;
     	} else {
@@ -163,7 +174,23 @@ void World::update() {
     	}
 
     }
+}
 
+// Must be called by Abstract Agents upon (CTL) lysis or (Cell) becoming infected,
+void World::EventReporter(int event_type) {
+	switch (event_type) {
+		case EVENT_INFECTEDDEATH_LYSIS:
+			stats->infected_lysis++;
+			break;
+		case EVENT_INFECTEDDEATH_VIRUS:
+			stats->infected_death++;
+			break;
+		case EVENT_FAILEDINFECTION:
+			stats->failed_infection++;
+			break;
+
+		default: break;
+	}
 }
 
 // This will clear all cells before placing them on the patches.
@@ -177,7 +204,7 @@ void World::placeCells() {
 	// Also clear the "infected" cells from the agents list
 	vector<AbstractAgent*>::iterator iter = agents.begin();
 	while ( iter != agents.end() ) {
-		if ( ((AbstractAgent*)(*iter))->getAgentType() == "Infected" ) {
+		if ( ((AbstractAgent*)(*iter))->getAgentType() == AbstractAgent::AGENT_INFECTED ) {
 			iter = agents.erase(iter);
 		} else {
 			++iter;
@@ -286,11 +313,11 @@ bool World::isNearPatch(int x, int y) {
 // Given a cell type, returns the colour array
 float * World::getCellColourFromType(int ct) {
 	switch(ct) {
-		case Cell::CELL_NOT_SUSCEPTIBLE: 	return(COLOUR_NOT_SUSCEPTIBLE);
-		case Cell::CELL_SUSCEPTIBLE: 		return(COLOUR_SUSCEPTIBLE);
-		case Cell::CELL_INFECTED: 			return(COLOUR_INFECTED);
-		case Cell::CELL_CTL: 				return(COLOUR_CTL);
-		case Cell::CELL_DEAD: 				return(COLOUR_DEAD);
+		case AbstractAgent::AGENT_NOT_SUSCEPTIBLE: 	return(COLOUR_NOT_SUSCEPTIBLE);
+		case AbstractAgent::AGENT_SUSCEPTIBLE: 		return(COLOUR_SUSCEPTIBLE);
+		case AbstractAgent::AGENT_INFECTED: 		return(COLOUR_INFECTED);
+		case AbstractAgent::AGENT_CTL: 				return(COLOUR_CTL);
+		case AbstractAgent::AGENT_DEADCELL: 		return(COLOUR_DEAD);
 	};
 
 	return(0);
@@ -617,11 +644,11 @@ void World::addAgent( AbstractAgent *a ) {
 
 
 void World::addCell(int x, int y) {
-	Cell * c = new Cell(x,y);
+	Cell * c = new Cell(x,y,ibs);
 	// Check the bounding box
 	checkBoundingBox(c->pos.x,c->pos.y);
 	// Set probability that this cell is susceptible: Generate number between 0.00 and 100.00
-	c->setSusceptible( SUSCEPTIBLE_PERCENTAGE );
+	c->setSusceptible( ibs->getParm("nc_susceptiblepc", 2.0f) );
 	// Do the other required stuff (set ID, push onto Cell vector)
 	cells.push_back(c);
     // Update the cell shadow layer with every point this cell takes up, with a call to setCellShadow(c.pos.x, c.pos.y, r)
@@ -631,7 +658,7 @@ void World::addCell(int x, int y) {
 void World::addCTL(int x, int y) {
 	//cout << " - Placing CTL at ("<<x<<","<<y<<")\n";
 	// Add the CTL cell at the required place
-	CTL *ctl = new CTL(x,y);
+	CTL *ctl = new CTL(x,y, ibs);
 	this->addAgent( ctl );
 }
 
@@ -670,11 +697,24 @@ void World::_setCellShadow(Cell *c, Cell * value) {
 // When called by the user through the GUI, will iterate through all cells and reset the susceptibility chance
 void World::resetCellSusceptibility() {
 	for (int i=0;i<(int)cells.size();i++) {
-		if ( cells[i]->cType != Cell::CELL_CTL || cells[i]->cType != Cell::CELL_INFECTED ) {
+		if ( cells[i]->agent_type != AbstractAgent::AGENT_CTL || cells[i]->agent_type != AbstractAgent::AGENT_INFECTED ) {
 			// If not infected or CTL, then reset to 0 and invoke chance of susceptibility
-			cells[i]->cType = Cell::CELL_NOT_SUSCEPTIBLE;
-			cells[i]->setSusceptible( SUSCEPTIBLE_PERCENTAGE );
+			cells[i]->agent_type = AbstractAgent::AGENT_NOT_SUSCEPTIBLE;
+			cells[i]->setSusceptible( ibs->getParm("nc_susceptiblepc", 2.0f) );
 		}
+	}
+}
+
+// When called by the user through the GUI, will iterate through all cells and reset the susceptibility chance
+void World::dropCTL() {
+	// Add a number of CTL within the bounding box
+	int number_ctl = round(CTL_DENSITY * stats->area_mm2);
+	//CTL_DENSITY * stats->area_mm2
+	int x,y;
+	for (int i=0; i<number_ctl; i++) {
+		x = randi(bounding_min.x,bounding_max.x);
+		y = randi(bounding_min.y,bounding_max.y);
+		addCTL(x, y);
 	}
 }
 
@@ -690,7 +730,10 @@ void World::clearAllCells() {
 
 // Check if the given coord is over a cell, return true/false
 bool World::isOverCell(int x, int y) {
-	return( CellShadow[x][y] > 0 );
+	if (x>0 && x<conf::WIDTH && y>0 && y<conf::HEIGHT) {
+		return( CellShadow[x][y] > 0 );
+	}
+	return(false);
 }
 
 // Return the cell at coord x,y (0 if nothing is there)
@@ -711,25 +754,41 @@ void World::toggleInfection(int x, int y) {
 	}
 }
 
-void World::writeReport() {
+// 2nd parameter "onlySusceptible" relates to whether we add new infected cells, or turn susceptible cells to infected status.
+void World::infectCells(int total, bool onlySusceptible) {
+	int infectedcount = 0;
 
-// For someone to fix..
-//save all kinds of nice data stuff
-//     int numherb=0;
-//     int numcarn=0;
-//     int topcarn=0;
-//     int topherb=0;
-//     for(int i=0;i<agents.size();i++){
-//         if(agents[i].herbivore>0.5) numherb++;
-//         else numcarn++;
-//
-//         if(agents[i].herbivore>0.5 && agents[i].gencount>topherb) topherb= agents[i].gencount;
-//         if(agents[i].herbivore<0.5 && agents[i].gencount>topcarn) topcarn= agents[i].gencount;
-//     }
-//
-//     FILE* fp = fopen("report.txt", "a");
-//     fprintf(fp, "%i %i %i %i\n", numherb, numcarn, topcarn, topherb);
-//     fclose(fp);
+	vector<Cell*>::iterator cell;
+
+	random_shuffle(cells.begin(), cells.end());
+
+	cell = cells.begin();
+	while (infectedcount<total && cell != cells.end() ) {
+		if (!(*cell)->isInfected()) {
+			if ((onlySusceptible && (*cell)->isSusceptible()) || !onlySusceptible) {
+				(*cell)->toggleInfection();
+				agents.push_back(*cell);
+				infectedcount++;
+			}
+		}
+		cell++;
+	}
+}
+
+// Saves most of the Stats module to a csv
+void World::writeReport(bool firstTime) {
+
+	char buffer[255];
+	// TODO: Check that logs/ exist
+	sprintf(buffer, "logs/log_%i.csv", UID);
+	FILE* fp = fopen(buffer, "a");
+	if (firstTime) {
+		// Write out the header
+		fprintf(fp, "time,infected,virions,ctl\n");
+	}
+	fprintf(fp, "%f,%i,%i,%i\n", worldtime, stats->infected, stats->virion, stats->ctl);
+	fclose(fp);
+
 }
 
 
@@ -749,14 +808,8 @@ void World::reset() {
 	bounding_min = Vector2f(-1,-1);
 	bounding_max = Vector2f(-1,-1);
 
-}
+	updateStats(true);
 
-void World::setClosed(bool close) {
-    CLOSED = close;
-}
-
-bool World::isClosed() const {
-    return CLOSED;
 }
 
 /* This gets called to draw the background things of the world: bounding box, "worldspace" and patches (latter only if in setup mode) */
@@ -889,7 +942,8 @@ void World::loadLayout() {
 		return;
 	}
 
-	World wyrd(new ImmunebotsSetup()); // The wyrd world will temporarily store the world we saved from set up
+	World wyrd; // The wyrd world will temporarily store the world we saved from set up
+	// We don't need to set the ImmunebotsSetup pointer
 
 	{
 		boost::archive::text_iarchive ia(setupfile);
@@ -901,8 +955,9 @@ void World::loadLayout() {
 	patchV = wyrd.patchV;
 	agents = wyrd.agents;
 
-	bounding_min = wyrd.bounding_min;
-	bounding_max = wyrd.bounding_max;
+	//bounding_min = wyrd.bounding_min;
+	//bounding_max = wyrd.bounding_max;
+	resetBoundingBox();
 
 	// Reset the shadow layer
 	resetShadowLayer();
@@ -914,5 +969,83 @@ void World::loadLayout() {
 		patch[int(patchV[p]/conf::WIDTH)][patchV[p]%conf::WIDTH] = true;
 	}
 
+	worldtime = 0.0;
+	this->updateStats(true);
+
+}
+
+void World::updateStats(bool resetEvents) {
+
+	int total_cells = 0, ctl = 0, notsusceptible = 0, infected = 0, susceptible = 0, virion = 0;
+
+	if (resetEvents) {
+		stats->infected_death = 0;
+		stats->infected_lysis = 0;
+	}
+
+	// Update the cell-related stats
+	vector<Cell*>::iterator cit;
+	for ( cit = cells.begin(); cit != cells.end(); ++cit) {
+		// Increment the right counter
+		switch ( ((AbstractAgent*)(*cit))->getAgentType() ) {
+			case AbstractAgent::AGENT_SUSCEPTIBLE:
+				susceptible++;
+				break;
+			case AbstractAgent::AGENT_INFECTED:
+				infected++;
+				break;
+			default: break;
+		}
+		total_cells++;
+	}
+
+	// Update the ctl & virion stats
+	vector<AbstractAgent*>::iterator agent;
+	for ( agent = agents.begin(); agent != agents.end(); ++agent) {
+		// Increment the right counter
+		switch ( ((AbstractAgent*)(*agent))->getAgentType() ) {
+			case AbstractAgent::AGENT_CTL:
+				ctl++;
+				total_cells++;
+				break;
+			case AbstractAgent::AGENT_VIRION:
+				virion++;
+				break;
+			default: break;
+		}
+	}
+
+	// Update the absolute cell/virion numbers
+	stats->ctl = ctl;
+	stats->total_cells = total_cells;
+	stats->notsusceptible = notsusceptible;
+	stats->susceptible = susceptible;
+	stats->infected = infected;
+	stats->virion = virion;
+
+	// Can't update the events here
+
+	// Update the density calculations
+	stats->ctl_per_mm2    = 0.0;
+	stats->virion_per_mm2 = 0.0;
+	if (stats->area_mm2>0.0) {
+		stats->ctl_per_mm2    = ctl/stats->area_mm2;
+		stats->virion_per_mm2 = virion/stats->area_mm2;
+	}
+
+	stats->ctl_per_cell = 0.0;
+	stats->virion_per_cell = 0.0;
+	int nonctlcells = total_cells - ctl;
+	if (nonctlcells>0) {
+		stats->ctl_per_cell = ctl/(float)nonctlcells;
+		stats->virion_per_cell = virion/(float)nonctlcells;
+	}
+
+	stats->ctl_per_infected = 0.0;
+	if (infected>0) {
+		stats->ctl_per_infected = ctl/(float)infected;
+	}
+
+	stats->cell_area = nonctlcells * M_PI * pow(conf::BOTRADIUS,2) / 1000000.0;
 }
 

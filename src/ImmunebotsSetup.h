@@ -9,6 +9,8 @@
 #define IMMUNEBOTSSETUP_H_
 
 #include <iostream>
+#include <unordered_map>
+#include "World.h"
 
 using namespace std;
 
@@ -17,6 +19,7 @@ class ImmunebotsSetup {
 public:
 	ImmunebotsSetup();
 	virtual ~ImmunebotsSetup();
+	void setWorld(World *);
 
 	/* The setup variables */
 	bool useGlut;
@@ -29,6 +32,23 @@ public:
 	/* The setup functions */
 	void processSetupFile();
 	void setEndTime(const char*);
+
+	float getParm(std::string, float);
+	int   getParm(std::string, int);
+	void  setParm(std::string, float);
+	void  setParm(std::string, int);
+
+private:
+
+	World * world;
+
+	void setParm(std::string, std::string);
+	void handleCommands(std::string command, std::string value);
+
+	void placeNonsusceptibleCells();
+
+	/* Rates and AbstractAgent parameters */
+	std::unordered_map<std::string, float> parameters;
 
 };
 

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "View.h"
+#include "helpers.h"
 
 /* Set of static const values to determine what the LEFT_CLICK does */
 const static int MOUSESTATE_DEFAULT     = 0;
@@ -41,10 +42,12 @@ public:
 
     void setWorld(World* w);
     void setCamera(float,float,float);
+    void setupDisplayLists(void);
 
     // Tw Tweak functions
     void createSetupMenu(bool visible);
     void createSimulationMenu(bool visible);
+    void createStatsMenu(bool visible);
 
     // Returns the WorldSpace (Model) co-ords of the mouse position.
     void getMouseWorldCoords(int x, int y, int z, GLdouble* ws);
@@ -63,15 +66,17 @@ public:
     void switchToSimulationMode(bool dosim);
 
     int  getMouseState();
-    void setMouseState(int v);
+    void setMouseState(int);
 
     void toggleDrawing();
     void togglePaused();
     void toggleStepMode(bool);
-    void setPaused(bool p);
+    void setPaused(bool);
+
+    void checkSetup();
 
     // Drawing functions
-    void drawCircle(float x, float y, float z, float r);
+    void drawCircle(float x, float y, float z, float r, bool);
     void RenderString(float x, float y, void *font, const char* string, float r, float g, float b);
 
     /* TEST FUNCTIONS*/
@@ -82,7 +87,7 @@ public:
 
 private:
 
-    // Compiler needs to know the size of the Camera struct, so full definition goes here.
+    // Compiler needs to know the size of structs, so full definitions go here.
     typedef struct {   /* Where da camera? */
 		double x, y, z;   /* 3-D coordinates (we don't need w here) */
 		float roll, pitch, heading;
@@ -92,6 +97,7 @@ private:
     World *world;
     ImmunebotsSetup *ibs; // Our config/setup object
     Camera *cam;
+    Statistics *stats;
 
     bool dosimulation; // Starts off as false, when true THEN paused is enabled
     bool paused;
@@ -114,6 +120,9 @@ private:
 	int lastmousey; // Need to know the last place the mouse was panned from
 	int lastmousex;
 	float scale;
+
+	/* Vertex lists (enabled if conf::USE_VERTEX_ARRAY */
+	int cell_list, cell_outline_list;
 
 	void automaticEventSetup();
 };

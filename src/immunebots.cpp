@@ -32,10 +32,14 @@ int main(int argc, char **argv) {
 
     srand(time(0));
     ImmunebotsSetup *is = new ImmunebotsSetup();
+    World *world = new World();
 
-    // Sort out the command line arguments
+    // Let world & setup see each other
+    world->setImmunebotsSetup(is);
+    is->setWorld(world);
+
+    // Sort out the command line arguments after creating (an empty) world
     processArguments(argc, argv, is);
-    World* world = new World(is);
     GLVIEW = new GLView(world, is);
     if (is->automaticRun) {
     	// Want to start the simulation immediately..
@@ -51,10 +55,11 @@ int main(int argc, char **argv) {
     if (!is->useGlut) {
 		// Set drawing to false (although this is no longer necessary, as we check is->useGlut before trying to draw)
 		GLVIEW->toggleDrawing();
-    	// Just repeatedly call handleIdle();
+		GLVIEW->checkSetup(); // If ok, will set dosimulation to TRUE
+		// Just repeatedly call handleIdle();
     	while (1) {
     		GLVIEW->handleIdle();
-    		// Will abort if no more agents or world end time is reached
+    		// Will exit if no more agents or world end time is reached
     	}
     } else {
     	// Print out keys - only relevant if we have visualisation
@@ -75,6 +80,8 @@ int main(int argc, char **argv) {
 	TwWindowSize(conf::WWIDTH,conf::WHEIGHT);
     GLVIEW->createSetupMenu(true);	// Create menu now (creates as visible)
     GLVIEW->createSimulationMenu(false); // Create menu now, but hide it until required.
+    GLVIEW->createStatsMenu(true); // Create menu now, but hide it until required.
+    GLVIEW->setupDisplayLists();
 
     // Continue with rest of the GL initialisation
     //glClearColor(0.1,0.9,1.0,1.0); //cyan
@@ -119,7 +126,7 @@ void processArguments(int argc, char **argv, ImmunebotsSetup *is) {
 	        	is->setEndTime(optarg); break;
 	        case '?':	// Intentional fallthrough (Help)
 	        case 'h':	// Display help
-	        	printHelp(); abort();
+	        	printHelp(); exit(EXIT_SUCCESS);
 	        case 'i':	// Commandline RunID (override)
 	        	runid = optarg; break;
 	        case 's':	// Load setup file

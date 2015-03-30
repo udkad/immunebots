@@ -22,17 +22,21 @@ class World {
 
 public:
 
-    World(ImmunebotsSetup*);
-    ~World();
+	// Events
+	const static int EVENT_INFECTEDDEATH_LYSIS = 1;
+	const static int EVENT_INFECTEDDEATH_VIRUS = 2;
+	const static int EVENT_FAILEDINFECTION	   = 3;
 
-    void update();
+    World();
+    ~World();
+    ImmunebotsSetup * ibs;
+    void setImmunebotsSetup(ImmunebotsSetup*);
+
+    void update(bool writeReport);
     void reset();
 
     void drawBackground(View* view, bool simulationmode);
     void drawForeground(View* view);
-
-    bool isClosed() const;
-    void setClosed(bool close);
 
 	void setPatch(int x, int y);
 	void setPatch(int index);
@@ -45,7 +49,7 @@ public:
 	float COLOUR_DEAD[3];
 
 	/* Other Conf settings */
-	float SUSCEPTIBLE_PERCENTAGE;
+	float CTL_DENSITY;
 	int DEFAULT_NUM_CELLS_TO_ADD;
 
 	// World state is currently unused
@@ -69,6 +73,7 @@ public:
     bool isOverCell(int x, int y); // TODO: Make private?
     Cell * getCell(int x, int y); // TODO: Make private?
     void toggleInfection(int x, int y);
+    void infectCells(int total, bool onlySusceptible);
 
     void resetCellColours();
     float * getCellColourFromType(int ct);
@@ -78,6 +83,8 @@ public:
 
     /* Place cells on patches (previously called: dojitter) */
     void placeCells();
+    /* Place CTL at random inside the bounding box */
+    void dropCTL();
 
     /* Save information to file */
     void saveLayout();
@@ -87,19 +94,22 @@ public:
     Vector2<int> bounding_min;
     Vector2<int> bounding_max;
 
+    Statistics * stats;
+    void updateStats(bool);
+    void EventReporter(int);
+
 private:
+
+	int UID;
 
     void setInputs(float timestep);
     void processOutputs(float timestep);
 
-    void writeReport();
+    void writeReport(bool);
 
     void reproduce(int ai, float MR, float MR2);
     void addNewByCrossover();
     void addRandomBots(int num);
-
-    ImmunebotsSetup * ibs;
-    int modcounter;
 
     // This is the active agents vector
     std::vector<AbstractAgent*> agents;
@@ -120,8 +130,6 @@ private:
     void checkBoundingBox(int x, int y);
 
     bool isNearPatch(int x, int y);
-
-    bool CLOSED; // if environment is closed, then no random bots are added per time interval
 
 	// For serialisation: We're only interested in the cells and patch vectors, and the bounding min/max.
     friend class boost::serialization::access;

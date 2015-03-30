@@ -36,8 +36,17 @@ protected:
 
 public:
 
-	bool isActive() {return active;}; // If T, remove from ActiveAgents queue
-	bool isDead() {return dead;}; // If T, remove from world
+    // Allowed values for agent_type:
+    static const int AGENT_NOT_SUSCEPTIBLE 	= 1;
+    static const int AGENT_SUSCEPTIBLE     	= 2;
+    static const int AGENT_INFECTED			= 3;
+    static const int AGENT_CTL			  	= 4;
+    static const int AGENT_VIRION		  	= 5;
+    static const int AGENT_INFECTED_NOVIRIONS = 6; // static cell which doesn't produce any virions
+    static const int AGENT_DEADCELL			= 99;
+
+	bool isActive() {return active;} // If T, remove from ActiveAgents queue
+	bool isDead()   {return dead;} // If T, remove from world
 
 	// Position-related
 	Vector2f pos;
@@ -52,16 +61,17 @@ public:
 	virtual void setInput(float, World* const) {};
 	virtual void doOutput(float, World* const) { cout << "\t"<<this<<" [doOutput not defined]";};
 
+	int agent_type;
+	int getAgentType() { return(agent_type); }
+
 	// Overload these
 	virtual void printInfo() { cout << this << " AbstractAgent [I need to be defined]\n"; }; // Change to logoutput?
-	virtual string getAgentType() {return "AbstractAgent";}; // Previously just "=0"
 
 	// Extension functions:
 	// - Predeterminable actions?
 	// - a 'register' function? (for actions, options)
 
 private:
-
 
 	// For serialisation:
     friend class boost::serialization::access;

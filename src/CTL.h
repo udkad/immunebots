@@ -11,6 +11,7 @@
 #include "vmath.h"
 #include "World.h"
 #include "AbstractAgent.h"
+#include "ImmunebotsSetup.h"
 
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
@@ -24,7 +25,7 @@ class CTL: public AbstractAgent {
 
 public:
 	CTL();
-	CTL(int,int);
+	CTL(int,int,ImmunebotsSetup*);
 	virtual ~CTL();
 
     // The following are AbstractAgent classes, which we make concrete in this class
@@ -32,11 +33,10 @@ public:
 	void setInput(float dt, World * const);
 	void doOutput(float dt, World * const);
 	void printInfo();
-	string getAgentType() { return string("CTL"); }
 
 private:
 
-	void init();
+	void init(ImmunebotsSetup*);
 
 	int state; // Current state of the CTL (e.g. move, sense, kill)
 	Cell *currentCell;
@@ -55,6 +55,7 @@ private:
         ar & angle;
         ar & speed;
         ar & radius;
+        ar & agent_type;
         ar & active;
         ar & drawable;
         ar & draw_priority;

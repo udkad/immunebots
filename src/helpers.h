@@ -3,6 +3,23 @@
 #include <stdlib.h>
 #include <math.h>
 
+
+typedef struct {   /* Our stats module - gets updated every second */
+	int total_cells;					/* Total number of ALL cells incl. CTL  */
+	int notsusceptible, susceptible, infected;   		/* Cell types */
+	int ctl;							/* CTL numbers */
+	int virion;
+	float ctl_per_mm2,  virion_per_mm2;	 /* Density of CTL and virions per mm2 */
+	float ctl_per_cell, virion_per_cell; /* Density of CTL and virions per cell */
+	float ctl_per_infected;				 /* E:T ratio */
+	float area_mm2;					/* area (in um) of the bounding box SANS margin */
+	float cell_area;
+	char infected_str[255];
+	/*Events*/
+	int infected_death, infected_lysis;	/* Death by virus-induced cytotoxicity or CTL lysis */
+	int failed_infection;	/* Triggered when a virion goes over a cell but doesn't infect */
+} Statistics;
+
 //uniform random in [a,b)
 inline float randf(float a, float b){return ((b-a)*((float)rand()/RAND_MAX))+a;}
 

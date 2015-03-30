@@ -1,5 +1,9 @@
 == Changelog
 
+Version 1.0001b
+Backup date: 2011-09-09
+Cells have states now; setup object passed to every agent; add a 'stats' menu in the GUI; more robust and extensive initialisation from setup files and default rates in the code; better cell placement on the 2D grid and improved (non-)susceptibility code for targets; lots of supporting stats code added.
+
 Version 1.0001a
 Backup date: 2011-08-29
 Minor changes - bug fixes, scantime added, better agent management and drawing code.

@@ -69,12 +69,37 @@ void GLView::RenderString(float x, float y, void *font, const char* string, floa
         glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, string[i]);
 }
 
-void GLView::drawCircle(float x, float y, float z, float r) {
+void GLView::drawCircle(float x, float y, float z, float r, bool draw_outline) {
     float n;
-    for (int k=0;k<17;k++) {
-        n = k*(M_PI/8);
-        glVertex4f(x+r*sin(n),y+r*cos(n),z,1.0);
+    glPushMatrix();
+    if (conf::USE_VERTEX_ARRAY) {
+    	glTranslatef(x,y,z);
+    	glScalef(r,r,r);
+    	glCallList(cell_list);
+    	if (draw_outline) { glCallList(cell_outline_list); }
+    } else {
+
+    	glBegin(GL_POLYGON);
+    	for (int k=0;k<17;k++) {
+    		n = k*(M_PI/8);
+    		glVertex4f(x+r*sin(n),y+r*cos(n),z,1.0);
+    	}
+    	glEnd();
+
+    	if (draw_outline) {
+   	    	glBegin(GL_LINES);
+   	    	glColor3f(0,0,0); // Black outline
+   	    	// Draw outline as set of 16 lines around the circumference
+   	    	for (int k=0;k<17;k++) {
+   	    		n = k*(M_PI/8);
+   	    		glVertex3f(x+r*sin(n), y+r*cos(n),z+0.001);
+   	    		n = (k+1)*(M_PI/8);
+   	    		glVertex3f(x+r*sin(n), y+r*cos(n),z+0.001);
+   	    	}
+   	    	glEnd();
+    	}
     }
+    glPopMatrix();
 }
 
 /* TW Menu functions */
@@ -95,7 +120,6 @@ void TW_CALL AddCells( void * world ) {
 void TW_CALL ResetSusceptibleCells( void * world ) {
 	((World*)world)->resetCellSusceptibility();
 }
-
 void TW_CALL ClearAllCells( void * world ) {
 	((World*)world)->clearAllCells();
 }
@@ -103,6 +127,10 @@ void TW_CALL ClearAllCells( void * world ) {
 void TW_CALL PlaceCellsOnPatches( void * world ) {
 	// TODO: See notes for LoadLayout
 	((World*)world)->placeCells();
+}
+
+void TW_CALL DropCTL( void * world ) {
+	((World*)world)->dropCTL();
 }
 
 void TW_CALL SaveLayout( void * world ) {
@@ -223,21 +251,22 @@ void GLView::createSetupMenu(bool visible) {
 	TwBar* bar = TwNewBar("Setup");
 
 	TwDefine("Setup color='0 0 0' alpha=128 position='10 10' size='300 500'");
-	TwDefine("Setup fontresizable=false resizable=true");
+	TwDefine("Setup fontresizable=false resizable=true valueswidth=100");
 
-	TwAddVarRO(bar, "MouseState", TW_TYPE_INT32, (&mouseState), " label='Mouse state' " );
+	//TwAddVarRO(bar, "MouseState", TW_TYPE_INT32, (&mouseState), " label='Mouse state' " );
+
+	/* PATCHES  */
+	TwAddVarCB(bar, "dp_switch", TW_TYPE_BOOLCPP, SetMouseStateDrawPatch, GetMouseStateDrawPatch, this,
+    		" label='Draw patches' group='Patch Setup' help='Toggle to switch on patch draw mode.' ");
+	TwAddButton(bar, "placecells_toggle", PlaceCellsOnPatches, world, " label='  Place cells on patches' group='Patch Setup' ");
 
 	TwAddSeparator(bar, NULL, NULL);
 
-	TwAddVarCB(bar, "dp_switch", TW_TYPE_BOOLCPP, SetMouseStateDrawPatch, GetMouseStateDrawPatch, this,
-    		" label='Draw patches' group='Patch Setup' help='Toggle to switch on patch draw mode.' ");
-	TwAddVarRW(bar, "sp_roto", TW_TYPE_FLOAT, &((*world).SUSCEPTIBLE_PERCENTAGE), " label='Susceptible cells (%)' min=0 max=100 group='Cells Setup' step=0.1 ' ");
-	TwAddButton(bar, "sp_button", ResetSusceptibleCells, world, " label='Reset cell susceptibility' group='Cells Setup' ");
-	TwAddVarRW(bar, "nc_roto", TW_TYPE_INT32, &((*world).DEFAULT_NUM_CELLS_TO_ADD), " label='Number of cells' min=100 max=10000 group='Cells Setup' step=50 ' ");
-	TwAddButton(bar, "cd_button", AddCells, world, " label='   Add cells' group='Cells Setup' ");
-    // Callback to switch on/off the cell dropper
-	TwAddVarCB(bar, "pc_switch", TW_TYPE_BOOLCPP, SetMouseStatePlaceCell, GetMouseStatePlaceCell, this,
-    		" label='Manually place cells' group='Cells Setup' help='Toggle to switch on cell dropping mode.' ");
+	//TwAddVarRW(bar,  "sp_roto", TW_TYPE_FLOAT, &((*world).SUSCEPTIBLE_PERCENTAGE), " label='Susceptible cells (%)' min=0 max=100 group='Cells Setup' step=0.1 ' ");
+	TwAddButton(bar, "sp_button", ResetSusceptibleCells, world, " label='  Reset cell susceptibility' group='Cells Setup' ");
+
+	TwAddVarRW(bar,  "nc_roto", TW_TYPE_INT32, &((*world).DEFAULT_NUM_CELLS_TO_ADD), " label='Number of cells' min=100 max=10000 group='Cells Setup' step=50 ' ");
+	TwAddButton(bar, "cd_button", AddCells, world, " label='  Add cells' group='Cells Setup' ");
 	TwAddButton(bar, "clear_cells", ClearAllCells, world, " label='Clear all cells' group='Cells Setup' ");
 
 	// Allow user to change the cell colours (Cell Setup/Cell colour, starts off closed)
@@ -248,21 +277,21 @@ void GLView::createSetupMenu(bool visible) {
 	TwAddVarRW(bar, "ctd_colour", TW_TYPE_COLOR3F, &((*world).COLOUR_DEAD),				" label='Dead' group='Cell colour' ");
 	TwDefine(" Setup/'Cell colour' group='Cells Setup' opened=false ");  // group Color is moved into group Cells Setup
 
+    // Callback to switch on/off the cell dropper
+	TwAddVarCB(bar, "pc_switch", TW_TYPE_BOOLCPP, SetMouseStatePlaceCell, GetMouseStatePlaceCell, this,
+    		" label='Manually place cells' group='Cells Setup' help='Toggle to switch on cell dropping mode.' ");
+
 	// Callback to the manual cell infector on/off switch
 	TwAddVarCB(bar, "ic_switch", TW_TYPE_BOOLCPP, SetMouseStateInfectCell, GetMouseStateInfectCell, this,
     		" label='Manually infect cell' group='Cells Setup' help='Toggle to switch on infect cell mode.' ");
 
-	// Callback to the drop CTL on/off switch
-	TwAddVarCB(bar, "ctl_place_switch", TW_TYPE_BOOLCPP, SetMouseStatePlaceCTL, GetMouseStatePlaceCTL, this,
-    		" label='Manually place CTL' group='Cells Setup' help='Toggle to switch on place CTL mouse mode.' ");
-
 	TwAddSeparator(bar, NULL, NULL);
 
-	//TwAddButton(bar, "toggle_label", NULL, NULL, "label='Display options:'");
-
-	//TwAddSeparator(bar, NULL, NULL);
-
-	TwAddButton(bar, "placecells_toggle", PlaceCellsOnPatches, world, " label='Place cells on patches' ");
+	TwAddVarRW(bar,  "cp_roto", TW_TYPE_FLOAT, &((*world).CTL_DENSITY), " label='CTL density (mm^-2)' min=0 max=500 group='CTL Setup' step=1.0 ' ");
+	TwAddButton(bar, "cp_button", DropCTL, world, " label='  Add CTL' group='CTL Setup' ");
+	// Callback to the drop CTL on/off switch
+	TwAddVarCB(bar, "ctl_place_switch", TW_TYPE_BOOLCPP, SetMouseStatePlaceCTL, GetMouseStatePlaceCTL, this,
+    		" label='Manually place CTL' group='CTL Setup' help='Toggle to switch on place CTL mouse mode.' ");
 
 	TwAddSeparator(bar, NULL, NULL);
 
@@ -273,7 +302,6 @@ void GLView::createSetupMenu(bool visible) {
 
 	TwAddSeparator(bar, NULL, NULL);
 
-	//TwAddButton(bar, "todo", NULL, NULL, "label='To do:'");
 	TwAddButton(bar, "iws_button", ResetWorld, world, " label='  Reset World'");
 	//TwAddButton(bar, "pl_toggle", NULL, NULL, "label='  Toggle patch layer'");
 	//TwAddButton(bar, "reset_colour_button", NULL, NULL, " label='  Reset cell colour' ");
@@ -316,6 +344,48 @@ void GLView::createSimulationMenu(bool visible) {
 
 }
 
+void GLView::createStatsMenu(bool visible) {
+
+	TwBar* barst = TwNewBar("Statistics");
+
+	char buffer[255];
+	int sim_width = 320;
+	sprintf(buffer, " Statistics color='0 0 0' alpha=128 position='%i 15' size='%i 350' ", conf::WWIDTH-sim_width-15, sim_width);
+
+	TwDefine(buffer);
+	TwDefine(" Statistics fontresizable=false resizable=true valueswidth=100 ");
+
+	/* Absolute counts */
+	TwAddVarRO(barst, "cell_total",          TW_TYPE_INT32, (&stats->total_cells),   " label='Total cells' group='Absolute counts' " );
+	TwAddVarRO(barst, "cell_notsusceptible", TW_TYPE_INT32, (&stats->notsusceptible), " label='Not susceptible cells' group='Absolute counts' " );
+	TwAddVarRO(barst, "cell_susceptible",    TW_TYPE_INT32, (&stats->susceptible), " label='Susceptible cells' group='Absolute counts' " );
+	TwAddVarRO(barst, "cell_infected",       TW_TYPE_INT32, (&stats->infected), " label='Infected cells' group='Absolute counts' " );
+	TwAddVarRO(barst, "cell_ctl",            TW_TYPE_INT32, (&stats->ctl),   " label='Killer T cells' group='Absolute counts' " );
+	TwAddVarRO(barst, "cell_virion",         TW_TYPE_INT32, (&stats->virion), " label='Virions' group='Absolute counts' " );
+
+	/* Event counter, e.g. lysis and death of infecteds */
+	TwAddVarRO(barst, "event_infectedlysis",   TW_TYPE_INT32, (&stats->infected_lysis),   " label='CTL lysis' group='Events' " );
+	TwAddVarRO(barst, "event_infecteddeath",   TW_TYPE_INT32, (&stats->infected_death),   " label='Virus-induced cell death' group='Events' " );
+	TwAddVarRO(barst, "event_failedinfection", TW_TYPE_INT32, (&stats->failed_infection), " label='Failed infections' group='Events' " );
+
+	/* Area */
+	TwAddVarRO(barst, "bounding_box_area", TW_TYPE_FLOAT, (&stats->area_mm2),  " label='Bounding box (mm^2)' group='Area' " );
+	TwAddVarRO(barst, "cell_area",         TW_TYPE_FLOAT, (&stats->cell_area), " label='Cell area (mm^2)' group='Area' " );
+
+	/* Density counter of CTL and virions per mm^2 or per total cells (e.g. 1 in 1000) */
+	TwAddVarRO(barst, "density_ctl_permm2",     TW_TYPE_FLOAT, (&stats->ctl_per_mm2),     " label='CTL per mm^2'     group='Density' " );
+	TwAddVarRO(barst, "density_ctl_percell",    TW_TYPE_FLOAT, (&stats->ctl_per_cell),    " label='CTL per cell'     group='Density' " );
+	TwAddVarRO(barst, "density_ctl_perinfected",TW_TYPE_FLOAT, (&stats->ctl_per_infected)," label='CTL per target (E:T)' group='Density' " );
+	TwAddVarRO(barst, "density_virion_permm2",  TW_TYPE_FLOAT, (&stats->virion_per_mm2),  " label='Virions per mm^2' group='Density' " );
+	TwAddVarRO(barst, "density_virion_percell", TW_TYPE_FLOAT, (&stats->virion_per_cell), " label='Virions per cell' group='Density' " );
+	//TwAddVarRO(barst, "cell_infected",    TW_TYPE_STDSTRING, &(stats->infected_str), "label='Infected cell # (%)' group='Cells' ");
+	//TwAddSeparator(barst, NULL, NULL);
+
+	// And hide if required
+	if (!visible) {
+		TwDefine(" Statistics visible=false ");
+	}
+}
 
 /* Create the world */
 
@@ -351,6 +421,9 @@ GLView::GLView(World *w, ImmunebotsSetup *is):
 	cam->pitch = 0.0;
 	cam->roll = 0.0;
 	cam->zoom = 0.10;
+
+	// Initialise the stats module
+	stats = world->stats;
 }
 
 GLView::~GLView() {
@@ -468,7 +541,7 @@ void GLView::processMouse(int button, int state, int x, int y) {
 						// In Simulation mode
 						if (world->isOverCell(ws[0],ws[1])) {
 							Cell * c = world->getCell(ws[0],ws[1]);
-							cout << "[MP] Picked cell["<<c<<"] - "<<c->lastScanTime<<"s ("<<(c->cType)<<")\n";
+							cout << "[MP] Picked cell["<<c<<"] - "<<c->lastScanTime<<"s ("<<(c->agent_type)<<")\n";
 						}
 					}
 
@@ -561,7 +634,7 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
 	if ( TwEventKeyboardGLUT(key,x,y) ) return;
 
 	// Exit program
-    if (key == 27) exit(0);
+    if (key == 27) exit(EXIT_SUCCESS);
 
 	// Reset view
     if (key=='r') {
@@ -651,7 +724,7 @@ void GLView::handleIdle() {
 		cout << "Have reached the required world time of " << world->getWorldTime() << "s, ";
 		if (ibs->automaticRun) {
 			cout << "exiting program.\n";
-			exit(0);
+			exit(EXIT_SUCCESS);
 		} else {
     		cout << "pausing simulation.\n";
     		paused = true;
@@ -664,7 +737,7 @@ void GLView::handleIdle() {
     	if (!ibs->useGlut) {
     		// TODO: Graceful exit (remember to flush everything to disk)
     		cout << "No Active Agents in queue, so exiting program (worldtime:"<<world->getWorldTime()<<"s)\n";
-    		exit(0);
+    		exit(EXIT_SUCCESS);
     	} else {
     		cout << "No Active Agents left, pausing simulation.\n";
     		paused = true;
@@ -676,9 +749,18 @@ void GLView::handleIdle() {
     modcounter++;
     idlecalled++;
 
+    if (modcounter>=10000) {
+        modcounter=0;
+    }
+
+	// Update stats and write-out report every 1000 timesteps (==1000 seconds)
+	if (modcounter%60==0) {
+		world->updateStats(false);
+	}
+
     // Only update the world is we're in simulation mode and the simulation isn't paused.
     if (dosimulation && !paused && (!stepmode || doanotherstep)) {
-    	world->update();
+    	world->update(modcounter%60==0);
     	if (stepmode) {
     		doanotherstep = false;
     	}
@@ -729,6 +811,7 @@ void GLView::handleIdle() {
 
 void GLView::automaticEventSetup() {
 
+	/*
 	cout << "[GLView] Automatic Events Setting Up..\n";
 
 	for (int i=0; i<100; i+=10) {
@@ -738,7 +821,7 @@ void GLView::automaticEventSetup() {
 	}
 	world->addCell( 90,100);
 	world->addCell(100, 90);
-
+*/
 
 
 	/*
@@ -987,14 +1070,11 @@ void GLView::drawAgent(const Agent& agent) {
 
 void GLView::drawCell(Cell *cell) {
 	// Useful variables
-	float n;
 	float r = cell->radius;
-	//float *cColor;// = world->getCellColourFromType(cell->cType);
 
 	// 1. Draw the body (simple circle)
-    glBegin(GL_POLYGON);
 	// Special colour for uninfected cells)
-	if ((cell->cType == Cell::CELL_NOT_SUSCEPTIBLE) && (cell->lastScanTime>1.0)) {
+	if ((cell->agent_type == AbstractAgent::AGENT_NOT_SUSCEPTIBLE) && (cell->lastScanTime>1.0)) {
 		// Create a blueish colour based on the last cell type
 		float decayFactor = 12*60*60; // Decay in 12h
 		float timeSinceScan = world->worldtime - cell->lastScanTime + 1.0/decayFactor;
@@ -1005,31 +1085,22 @@ void GLView::drawCell(Cell *cell) {
 			(170.0+(25.0*timeSinceScan/decayFactor))/255.0,
 			 1.0);
 	} else {
-		glColor4fv( world->getCellColourFromType(cell->cType) );
+		glColor4fv( world->getCellColourFromType(cell->agent_type) );
 	}
-    drawCircle(cell->pos.x, cell->pos.y, cell->draw_priority, r);
-    glEnd();
+    drawCircle(cell->pos.x, cell->pos.y, cell->draw_priority, r, true);
 
-    // 2. Draw a black line around the circle
-    glBegin(GL_LINES);
-    glColor3f(0,0,0); // Black outline
-    // Draw outline as set of 16 lines around the circumference
-    for (int k=0;k<17;k++) {
-        n = k*(M_PI/8);
-        glVertex3f(cell->pos.x+r*sin(n), cell->pos.y+r*cos(n),cell->draw_priority+0.001);
-        n = (k+1)*(M_PI/8);
-        glVertex3f(cell->pos.x+r*sin(n), cell->pos.y+r*cos(n),cell->draw_priority+0.001);
-    }
-    glEnd();
+    glPushMatrix();
 
     // Display cell type, if debug is on
     // TODO: Add debug bool to switch on/off cell loc information?
     if (false) {
-    	sprintf(buf2, "%i", cell->cType);
+    	sprintf(buf2, "%i", cell->agent_type);
     	RenderString(cell->pos.x-conf::BOTRADIUS*1.5, cell->pos.y+conf::BOTRADIUS*1.8+5, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
     	//sprintf(buf2, "(%.0f,%.0f)", cell.pos.x, cell.pos.y);
     	//RenderString(cell.pos.x-conf::BOTRADIUS*1.5, cell.pos.y+conf::BOTRADIUS*1.8+15, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
     }
+
+    glPopMatrix();
 }
 
 void GLView::drawProgressBar(float completed) {
@@ -1110,8 +1181,30 @@ void GLView::setPaused(bool p) {
 	paused = p;
 }
 
+// Checks if setup has been done, i.e. there are cells and agents, and an endtime.
+void GLView::checkSetup() {
+
+	if ( world->numAgents()>0 ) {
+		if ( world->numCells() > 0) {
+			if (ibs->endTime>0) {
+				dosimulation = true;
+				return;
+			} else {
+				cout << "ERROR: No end time set. Aborting..\n";
+			}
+		} else {
+			cout << "ERROR: No cells in simulation. Aborting..\n";
+		}
+	} else {
+		cout << "ERROR: No agents (infected, virions or CTL) in simulation. Aborting..\n";
+	}
+
+	// If we reach here then something is wrong - abort!
+	exit(EXIT_FAILURE);
+}
+
 void GLView::drawDot(int x, int y, float z) {
-	// Draw the user-specified patch
+	// Draw a dot! Used for patches (and virions)
     glBegin(GL_POINTS);
     glColor3f(0.5,0.5,0.5);
 	glVertex3f(x,y,z);
@@ -1126,6 +1219,38 @@ void GLView::setCamera(float tx, float ty, float z) {
 	cam->x = tx;
 	cam->y = ty;
 	cam->zoom = z;
+}
+
+// Setup the simple cell vertex list
+void GLView::setupDisplayLists() {
+	if (conf::USE_VERTEX_ARRAY) {
+
+		cell_list = glGenLists(1);
+		glNewList( cell_list, GL_COMPILE );
+		glBegin(GL_POLYGON);
+		float n;
+		for (int k=0;k<17;k++) {
+			n = k*(M_PI/8);
+			glVertex4f(1.0*sin(n),1.0*cos(n),0.0,1.0);
+		}
+		glEnd();
+		glEndList();
+
+
+		cell_outline_list = glGenLists(1);
+		glNewList( cell_outline_list, GL_COMPILE );
+		glBegin(GL_LINES);
+    	glColor3f(0,0,0); // Black outline
+    	// Draw outline as set of 16 lines around the circumference
+    	for (int k=0;k<17;k++) {
+    		n = k*(M_PI/8);
+    		glVertex3f(1.0*sin(n), 1.0*cos(n),0.001);
+    		n = (k+1)*(M_PI/8);
+    		glVertex3f(1.0*sin(n), 1.0*cos(n),0.001);
+    	}
+    	glEnd();
+    	glEndList();
+	}
 }
 
 

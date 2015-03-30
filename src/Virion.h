@@ -10,12 +10,13 @@
 
 #include "AbstractAgent.h"
 #include "Cell.h"
+#include "ImmunebotsSetup.h"
 
 class Virion: public AbstractAgent {
 
 public:
 	Virion();
-	Virion(Cell* const);
+	Virion(Cell* const, ImmunebotsSetup*);
 	virtual ~Virion();
 
 	// AbstractAgent functions

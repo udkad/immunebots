@@ -20,20 +20,17 @@ using namespace std;
 
 BOOST_CLASS_EXPORT_GUID(Cell, "Cell");
 
-Cell::Cell() {
-	init();
-}
+// Don't use this..
+Cell::Cell() {}
 
 // These cells are AbstractAgents, even though they are only "active" if infected. They also don't move at all.
-Cell::Cell(int x, int y) {
-	init();
+Cell::Cell(int x, int y, ImmunebotsSetup * ibs) {
+	init(ibs);
 	pos.x = x;
 	pos.y = y;
 }
 
-void Cell::init(){
-
-	id = rand();
+void Cell::init(ImmunebotsSetup * ibs){
 
 	// Cells have a position, and a speed
     pos   = Vector2f(randf(0,conf::WIDTH),randf(0,conf::HEIGHT));
@@ -42,13 +39,13 @@ void Cell::init(){
 
     //nearestPatch = Vector2f(conf::WIDTH/2, conf::HEIGHT/2);
     radius = conf::BOTRADIUS;
-    cType = CELL_NOT_SUSCEPTIBLE;
+    agent_type = AGENT_NOT_SUSCEPTIBLE;
     lastScanTime = 0.0;
 
     // Rates (in secs)
-    // TODO: This should be set by the virion!
-    r_vproduction = 0.0023;// = 200 * 1/(24*60*60); // 200 virions per day
-    r_death = 0.000005787; // = 1/2*1/(24*60*60); // Infected cell death rate: Half life of approx 2 days
+    // TODO: This should be set (overwritten perhaps!) by the virion.
+    r_vproduction = ibs->getParm("r_vproduction", 0.0023f);// = 200 * 1/(24*60*60); // 200 virions per day
+    r_death = ibs->getParm("r_ideath",0.000005787f); // = 1/2*1/(24*60*60); // Infected cell death rate: Half life of approx 2 days
 
     active = false;
     lifespan = 0.0;
@@ -81,14 +78,22 @@ void Cell::setInput(float dt, World * w) {
 // Infected cells produce virions
 void Cell::doOutput(float dt, World *w) {
 
-	if (cType == CELL_INFECTED) {
+	if (agent_type == AGENT_INFECTED) {
 		// Infected cells can die or produce virions
 		if ( randf(0,1) <= r_death*dt ) {
 			setKilled();
+			// Notify the world event reporter of this virus-induced death
+			w->EventReporter(World::EVENT_INFECTEDDEATH_VIRUS);
 		} else if ( randf(0,1) <= r_vproduction*dt ) {
-			Virion *v = new Virion(this);
+			Virion *v = new Virion(this, w->ibs);
 			w->addAgent( v );
 		}
+	} else if (agent_type == AGENT_INFECTED_NOVIRIONS) {
+		if ( randf(0,1) <= r_death*dt ) {
+			setKilled();
+			// Notify the world event reporter of this virus-induced death
+			w->EventReporter(World::EVENT_INFECTEDDEATH_VIRUS);
+		} // else pick a susceptible cell at random and infect!
 	}
 
 }
@@ -101,43 +106,43 @@ void Cell::printInfo() {
 /* Other functions */
 
 void Cell::setKilled() {
-	cType = CELL_DEAD;
+	agent_type = AGENT_DEADCELL;
 	dead = true;
 	active = false; // Will be removed from the ActiveAgents queue
 }
 
 void Cell::setCellType(int newType) {
 	// If there is a change from cellType to newType
-	if ( newType != cType ) {
-		cType = newType;
+	if ( newType != agent_type ) {
+		agent_type = newType;
 	}
 }
 
 void Cell::setSusceptible(float sp) {
 	if ( randf(0.0,1.0) < sp/100.0) {
-		setCellType(CELL_SUSCEPTIBLE);
+		setCellType(AGENT_SUSCEPTIBLE);
 	}
 }
 
 bool Cell::isInfected() {
-	return (cType == CELL_INFECTED);
+	return (agent_type == AGENT_INFECTED);
 }
 
 bool Cell::isSusceptible() {
-	return (cType == CELL_SUSCEPTIBLE);
+	return (agent_type == AGENT_SUSCEPTIBLE);
 }
 
 void Cell::setInfected(bool infected) {
 	if (infected) {
-		setCellType(CELL_INFECTED);
+		setCellType(AGENT_INFECTED);
 	} else {
-		setCellType(CELL_NOT_SUSCEPTIBLE);
+		setCellType(AGENT_NOT_SUSCEPTIBLE);
 	}
 	active = infected;
 }
 
 // If infected, then cell is an ActiveAgent
 void Cell::toggleInfection() {
-	setInfected( !(cType==CELL_INFECTED) );
+	setInfected( !(agent_type==AGENT_INFECTED) );
 }
 
