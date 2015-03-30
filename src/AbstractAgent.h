@@ -16,7 +16,10 @@
 #include "vmath.h"
 
 #include <iostream>
+
+#ifndef IMMUNEBOTS_NOGL
 #include <GL/glut.h> // Required for the drawing utilities
+#endif
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
