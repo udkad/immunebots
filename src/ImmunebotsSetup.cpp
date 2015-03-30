@@ -34,6 +34,17 @@ ImmunebotsSetup::ImmunebotsSetup() {
     parameters["r_ctlspeed"]    = 1.0;
 
     parameters["nc_susceptiblepc"] = 2.0;
+
+    // Stats and reporting time: default is 5 mins
+    parameters["report_time"]  = 300.0; /* Can be overridden by the user in the setup file */
+    parameters["update_stats"] = 300.0; /* Will be overridden if there is an EndCondition or Event */
+    //cout << " [DEBUG] update stats was just init - got " << parameters["update_stats"] << "s. Count is "<< parameters.count("update_stats") << "." << endl;
+
+    // Initial starting dimensions of the world.
+    parameters["WIDTH"]  = conf::DefaultWidth;
+    parameters["HEIGHT"] = conf::DefaultHeight;
+
+    // For CTL fractional information?
 }
 
 void ImmunebotsSetup::setWorld(World * w) {
@@ -88,12 +99,15 @@ void ImmunebotsSetup::processSetupFile() {
 				setEndTime(value.c_str());
 			} else if (boost::iequals(keyword, "Stats")) {
 				if (boost::iequals(value, "extra")) {
+					cout << " - turning on extra stats output" << endl;
 					setParm("stats_extra", 1);
 				}
 			} else if (boost::iequals(keyword, "layoutfile")) {
 				layoutfilename = value;
 			} else if (boost::iequals(keyword, "reporttime")) {
-				setParm("report_time", getTimeInSeconds(value.c_str()));
+				/* Set both the report writing and stats updating to the same time */
+				setParm("report_time",  getTimeInSeconds(value.c_str()));
+				setParm("stats_update", getParm("report_time", 300));
 			} else if (boost::iequals(keyword, "reportname")) {
 				if (boost::iequals(value,"fromid")) {
 					reportfilename = id;
@@ -200,6 +214,10 @@ void ImmunebotsSetup::processSetupFile() {
 			cout << "WARNING: Unrecognised line in setupfile (ignoring..): " << line << endl;
 		}
 	}
+
+	// Finished with setup, so do stats
+	world->updateStatsFull();
+
 }
 
 float ImmunebotsSetup::getParm(std::string parmName, float defaultParm) {
@@ -243,10 +261,12 @@ void ImmunebotsSetup::handleEndCondition(string key, string value) {
 	} else if ( boost::iequals(key,"infectedpc_eq") ) {
 		setParm("end_infectedpc_eq",1);
 		setParm("end_infectedpc_eqvalue", (float)atof(value.c_str()) );
+		setParm("update_stats", 1); /* Reset stats to be updated every second of worldtime */
 		cout << " - EndCondition of 'Infected == "<< getParm("end_infectedpc_eqvalue", 0.0f)*100 <<"%' set" << endl;
 	} else if ( boost::iequals(key,"infectedpc_ge") ) {
 		setParm("end_infectedpc_ge",1);
 		setParm("end_infectedpc_gevalue", (float)atof(value.c_str()) );
+		setParm("update_stats", 1); /* Reset stats to be updated every second of worldtime */
 		cout << " - EndCondition of 'Infected >= "<< getParm("end_infectedpc_gevalue", 0.0f)*100 <<"%' set" << endl;
 	} else {
 		cout << "WARNING: Could not parse the EndCondition: " << key <<":"<<value << endl;
@@ -274,14 +294,14 @@ void ImmunebotsSetup::handleCommands(std::string command, std::string value) {
 
 }
 
-// Handler for "Event AddAbsolute 50CTL@5d" config files
+// Handler for "Event AddAbsolute 50CTL@5d" config lines
 void ImmunebotsSetup::handleEvents( std::string type, std::string value ) {
 
 	Event e;
 	// Standard inits:
 	e.fired = false;
 
-	/* ADD E:T RATIO, ADD ABSOLUTE, ADD WHEN */
+	/* TYPE: ADD E:T RATIO, ADD ABSOLUTE, ADD WHEN, END AFTER <CONDITION> */
 
 	if ( boost::iequals(type, "addetratio") || boost::iequals(type, "etratio") ) {
 		// This is an event which will trigger in the future. E:T CTL will be added at time t
@@ -294,27 +314,50 @@ void ImmunebotsSetup::handleEvents( std::string type, std::string value ) {
 	} else if ( boost::iequals(type, "addwhen") ) {
 		// specialised add: Event AddWhen 10CTL@100Infected => add 10 CTL when Infected count is 100.
 		e.event = World::EVENTSLIST_ADDWHEN;
+		setParm("update_stats", 1); /* Reset stats to be updated every second of worldtime */
+	} else if ( boost::iequals(type, "endafter") ) {
+		// specialised add: Event AddWhen 10CTL@100Infected => add 10 CTL when Infected count is 100.
+		e.event = World::EVENTSLIST_ENDAFTER;
+		setParm("update_stats", 1); /* Reset stats to be updated every second of worldtime */
+	} else if ( boost::iequals(type, "endtime") ) {
+		// specialised end time: resets the world endtime to worldtime+specifiedtime upon firing.
+		e.event = World::EVENTSLIST_ENDTIME;
+		setParm("update_stats", 1); /* Reset stats to be updated every second of worldtime */
 	}
 
+	/* VALUE: Can be 5CTL@100s or 10CTL@100Infected, i.e. <Number of Agent to add>@<Trigger>
+	 *  	or, for EndAfter: 10Infected@100Infected, i.e. Exit when we hit 10 Infected AFTER hitting 100 Infected.
+	 *      or, for EndAfter: 13d@100Infected, i.e. Exit 3 days AFTER hitting 100 Infected.
+	 * */
+
 	// Start decoding the value string, syntax is "5CTL@8d" =~ /([\d.]+)([^@]+)@(.+)/i
+	// Or: (in the case of EndTime) "3d@100I" =~ /([^@]+)@(.+)/i
 	boost::regex eventstr("\\s*([\\d.]+)([^@]+)@(.+)(\\s*#.*)?", boost::regex::perl|boost::regex::icase);
 	boost::cmatch em;
 
 	if ( boost::regex_match(value.c_str(), em, eventstr) ) {
 
-		// Number is easy - just turn string into char[] and then convert to float.
-		e.number  = atof( string(em[1].first, em[1].second).c_str() );
+		if (e.event != World::EVENTSLIST_ENDTIME) {
+			// Number is easy - just turn string into char[] and then convert to float.
+			e.number  = atof( string(em[1].first, em[1].second).c_str() );
 
-		// Agent is harder - need to match to an AbstractAgent::AGENT_*.
-		e.agentpp = string(em[2].first, em[2].second);
-		e.agent   = Agent2Type( e.agentpp );
+			// Agent is harder - need to match to an AbstractAgent::AGENT_*. Skip for ENDTIME
+			e.agentpp = string(em[2].first, em[2].second);
+			e.agent   = Agent2Type( e.agentpp );
+		} else if (e.event == World::EVENTSLIST_ENDTIME) {
+			// This bit picks out the time to end the simulation at, and stores it in e.number
+			e.number = getTimeInSeconds( string(em[1].first, em[1].second).append(string(em[2].first, em[2].second)).c_str() );
+		}
 
+		// Now pick out the trigger, e.g. 1000I or 5d.
 		string trigger = string(em[3].first, em[3].second);
 		// After the '@' is either a TIME or an Infected Cell Count, e.g. '@5d' or '@100Infected'
 		if ( e.event == World::EVENTSLIST_ADDETRATIO || e.event == World::EVENTSLIST_ADDABSOLUTE ) {
 			// Time is OK - need to turn a string into a time (in seconds) using getTimeInSeconds().
 			e.time = getTimeInSeconds( trigger.c_str() );
-		} else if (e.event == World::EVENTSLIST_ADDWHEN) {
+		} else if (e.event == World::EVENTSLIST_ADDWHEN  ||
+				   e.event == World::EVENTSLIST_ENDAFTER ||
+				   e.event == World::EVENTSLIST_ENDTIME ) {
 			// Not an explicit time, but rather a condition which triggers the event (usually adding x CTL once the Infected cell count reaches y).
 			boost::regex condstr("(\\d+)(\\w+)", boost::regex::perl|boost::regex::icase);
 			boost::cmatch cm;
@@ -346,15 +389,15 @@ void ImmunebotsSetup::handleEvents( std::string type, std::string value ) {
 
 // Translate pretty string to agent type. .e.g "CTL" to 4
 int ImmunebotsSetup::Agent2Type( string agentpp ) {
-	if ( boost::iequals(agentpp, "CTL") )              			{ return(AbstractAgent::AGENT_CTL); }
-		else if ( boost::iequals(agentpp, "Susceptible") ) 		{ return(AbstractAgent::AGENT_SUSCEPTIBLE); }
-		else if ( boost::iequals(agentpp, "Virion") )      		{ return(AbstractAgent::AGENT_VIRION); }
-		else if ( boost::iequals(agentpp, "Infected") )    		{ return(AbstractAgent::AGENT_INFECTED); }
-		else if ( boost::iequals(agentpp, "InfectedNoVirions") ){ return(AbstractAgent::AGENT_INFECTED_NOVIRIONS); }
-		else {
-			cout << "[WARNING] Unable to parse agent ("<<agentpp<<") in config file. CTL, Susceptible, Virion and Infected[NoVirions] are the only valid options." << endl;
-			return(0);
-		}
+	if ( boost::iequals(agentpp, "CTL") )              		{ return(AbstractAgent::AGENT_CTL);                }
+	else if ( boost::iequals(agentpp, "Susceptible") ) 		{ return(AbstractAgent::AGENT_SUSCEPTIBLE);        }
+	else if ( boost::iequals(agentpp, "Virion") )      		{ return(AbstractAgent::AGENT_VIRION);             }
+	else if ( boost::iequals(agentpp, "Infected") )    		{ return(AbstractAgent::AGENT_INFECTED);           }
+	else if ( boost::iequals(agentpp, "InfectedNoVirions") ){ return(AbstractAgent::AGENT_INFECTED_NOVIRIONS); }
+	else {
+		cout << "[WARNING] Unable to parse agent ("<<agentpp<<") in config file. CTL, Susceptible, Virion and Infected[NoVirions] are the only valid options." << endl;
+		return(0);
+	}
 }
 
 // Check to see if we have reached the end conditions specified in the setup
@@ -375,6 +418,10 @@ bool ImmunebotsSetup::hasReachedEnd() {
 			infected_pc <= getParm("end_infectedpc_eqvalue",0.0f) ) {
 			cout << " - End condition (Infected% == "<<getParm("end_infectedpc_eqvalue",0.0f)*100<<"%) has been reached" << endl;
 			return( true );
+		} else if ( getParm("end_infected_le",0)==1 &&
+			world->stats->infected <= getParm("end_infected_levalue",2) ) {
+			cout << " - End condition (Infected <= "<<getParm("end_infected_levalue",2)<<") has been reached" << endl;
+			return(true);
 		}
 	}
 
@@ -382,7 +429,7 @@ bool ImmunebotsSetup::hasReachedEnd() {
 }
 
 
-// Will create a (square) grid of susceptible cells
+// Will create a (square) grid of non-susceptible and susceptible cells.
 void ImmunebotsSetup::placeNonsusceptibleCells() {
 
 	int startx       = getParm("startx",100);
@@ -391,13 +438,23 @@ void ImmunebotsSetup::placeNonsusceptibleCells() {
 	int total_cells  = getParm("nc_totalcount", 10000);
 
 	if ( getParm("nc_squaregrid", 0) == 1 ) {
-		int square = (int)(sqrt(total_cells));
+		int squaroot = (int)(sqrt(total_cells));
+		int clength = (int)(2*conf::BOTRADIUS) + cell_spacing;
 
-		for (int i=0; i<square; i++) {
-			for (int j=0; j<square; j++) {
+		// Check that the total number of cells to place does not exceed the world size
+		if ( startx+clength*squaroot > getParm("WIDTH",0) ) {
+			// World not wide OR high enough!
+			int MAX_CELLS = (getParm("WIDTH",0)-2*startx)/clength;
+			MAX_CELLS = MAX_CELLS * MAX_CELLS;
+			cout << "ERROR: Config file specifies " << total_cells << " cells to be placed. However, system max is: " << MAX_CELLS << ". Exiting.\n";
+			exit(EXIT_FAILURE);
+		}
+
+		for (int i=0; i<squaroot; i++) {
+			for (int j=0; j<squaroot; j++) {
 				world->addCell(
-						startx+((int)(2*conf::BOTRADIUS)+cell_spacing)*i,
-						starty+((int)(2*conf::BOTRADIUS)+cell_spacing)*j
+						startx+clength*i,
+						starty+clength*j
 				);
 			}
 		}

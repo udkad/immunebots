@@ -36,13 +36,15 @@ public:
 	const static int EVENTSLIST_ADDETRATIO  = 1;
 	const static int EVENTSLIST_ADDABSOLUTE = 2;
 	const static int EVENTSLIST_ADDWHEN     = 3;
+	const static int EVENTSLIST_ENDAFTER    = 4;
+	const static int EVENTSLIST_ENDTIME		= 5;
 
-    World();
+    //World();
+    World(ImmunebotsSetup*);
     ~World();
     ImmunebotsSetup * ibs;
-    void setImmunebotsSetup(ImmunebotsSetup*);
 
-    void update(bool writeReport);
+    void update();
     void reset();
 
     void drawBackground(View* view, bool simulationmode);
@@ -75,13 +77,14 @@ public:
     void addRandomCells(int num);
     void addAgent(AbstractAgent *);
 
+    void setWorldDimensions(int, int);
     void resetShadowLayer();
     void setCellShadow(Cell *c);
     void resetCellShadow(Cell *c);
     void _setCellShadow(Cell *c, Cell * value);
 
     bool isOverCell(int x, int y); // TODO: Make private?
-    Cell * getCell(int x, int y); // TODO: Make private?
+    Cell * getCell(int x, int y);
     void toggleInfection(int x, int y);
     void infectCells(int total, bool onlySusceptible);
 
@@ -100,7 +103,10 @@ public:
     /* Adding events to the EventsList */
     void addEvent(Event);
 
-    /* Save information to file */
+    /* Iterates through the right vector cells/agents and return the current number of the desired AbstractAgent */
+    int getCurrentPopulation(int);
+
+    /* LEGACY: Save information to file */
     void saveLayout();
     void loadLayout();
 
@@ -109,7 +115,10 @@ public:
     Vector2<int> bounding_max;
 
     Statistics * stats; // Statistics is defined in helpers.h (weird location, but widely shared)
+    void updateStatsFull();
     void updateStats(bool);
+    void writeReport(bool);
+
     void EventReporter(int);
 
 private:
@@ -119,10 +128,8 @@ private:
     void setInputs(float timestep);
     void processOutputs(float timestep);
 
-    void writeReport(bool);
-
-    void reproduce(int ai, float MR, float MR2);
-    void addNewByCrossover();
+    //void reproduce(int ai, float MR, float MR2);
+    //void addNewByCrossover();
     void addRandomBots(int num);
 
     // This is the active agents vector
@@ -139,6 +146,9 @@ private:
 
     // Cell * CellShadow[conf::WIDTH][conf::HEIGHT]; // Old C-style way
     vector< vector<Cell*> > CellShadow;
+    //bool * CellShadowBool;
+    vector< vector<bool> > CellShadowBool;
+
 
     /* PATCH */
     // If we use bools instead of ints, then 1bit will be used for each element, instead of 4 bytes!

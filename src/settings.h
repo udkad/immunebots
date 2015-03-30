@@ -5,12 +5,12 @@ namespace conf {
 
 	// Absolute maximum size of the world!
 	// Note: most of the time we'll be using a sub-set of this (see World::bounding_m{in,ax})
-    const int WIDTH   = 10000;
-    const int HEIGHT  = 10000;
+    const int DefaultWidth  = 20200; // 20200*20200 allows placement of 1M cells.
+    const int DefaultHeight = 20200;
     const int WWIDTH  = 1800;  // window width and height
     const int WHEIGHT = 1000;
 
-    const float FAR_PLANE = 10.0; // The extent of the z-axis
+    const float FAR_PLANE = 10.0; // The extent of the z-axis  // Not used
 
     // GL options
 	const bool USE_VERTEX_ARRAY = true;
@@ -23,7 +23,7 @@ namespace conf {
     const float COLOUR_DEAD[4]			   = {0.2,0.2,0.2,1}; // darkgray (black?)
 
 	/* New configuration variables */
-    const float CTL_DENSITY              = 100.0f;
+    const float CTL_DENSITY              = 100.0f;  // Not used
     const int   DEFAULT_NUM_CELLS_TO_ADD = 1000;
 
     /* Simulation-related variables */
@@ -31,10 +31,10 @@ namespace conf {
      *   i.e. if slowest rate is 6/min (i.e. 1/10 per second) and #TS is 10, then every timestep will be 1s.
 	 *   Formula: TS time = 1/(rate * #TS)
      */
-    const int NUMBER_OF_TIMESTEPS = 10;
+    const int NUMBER_OF_TIMESTEPS = 10; // Not used
 
     /* SCRIPTBOTS legacy, but used in Immunebots */
-    const int NUMBOTS=5; //initially, and minimally
+    const int NUMBOTS=5; //initially, and minimally  // Not used
     const float BOTRADIUS=5; //for drawing
 
 

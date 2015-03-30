@@ -449,6 +449,8 @@ void GLView::switchToSimulationMode(bool dosim) {
 	dosimulation = dosim;
 	paused = true;
 	doanotherstep = true;
+	// Also force a full stats update
+	world->updateStatsFull();
 }
 
 // Stupid accessor function for a Tw callback to get the current value of the mouse state
@@ -536,7 +538,7 @@ void GLView::processMouse(int button, int state, int x, int y) {
 
 					} else { // End of !dosimulation
 						// In Simulation mode
-						if (world->isOverCell(ws[0],ws[1])) {
+						if ( world->isOverCell(ws[0],ws[1]) ) {
 							Cell * c = world->getCell(ws[0],ws[1]);
 							cout << "[MP] Picked cell["<<c<<"] - "<<c->lastScanTime<<"s ("<<(c->agent_type)<<")\n";
 						}
@@ -631,7 +633,11 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
 	if ( TwEventKeyboardGLUT(key,x,y) ) return;
 
 	// Exit program
-    if (key == 27) exit(EXIT_SUCCESS);
+    if (key == 27) {
+    	//exit(EXIT_SUCCESS); // Crashes X-windows!
+    	glutDestroyWindow(1); // Note: have hard coded the window number (we only create one)
+    	return;
+    }
 
 	// Reset view
     if (key=='r') {
@@ -720,6 +726,9 @@ void GLView::handleIdle() {
     // Check if we have reached the end of the simulation
 	if ( dosimulation && !paused && ibs->hasReachedEnd() ) { //world->getWorldTime() >= ibs->endTime ) {
 		cout << " - Simulation has been paused or has reached an end condition, ";
+		// Force stats writeout
+		world->updateStats(false);
+		//world->writeReport(false);
 		if (ibs->automaticRun) {
 			cout << "exiting program." << endl;
 			paused = true; //returns control to the headless loop in GLVIEW
@@ -751,14 +760,9 @@ void GLView::handleIdle() {
         modcounter=0;
     }
 
-	// Update stats and write-out report every 300 timesteps (i.e. every 5 minutes)
-	if (!paused && modcounter%ibs->getParm("report_time",300)==0) {
-		world->updateStats(false);
-	}
-
-    // Only update the world is we're in simulation mode and the simulation isn't paused.
+    // Only update the world if we're in simulation mode and the simulation isn't paused.
     if (dosimulation && !paused && (!stepmode || doanotherstep)) {
-    	world->update(modcounter%ibs->getParm("report_time",300)==0);
+    	world->update();
     	if (stepmode) {
     		doanotherstep = false;
     	}
@@ -861,7 +865,7 @@ void GLView::renderScene() {
     glLoadIdentity();
     glPushMatrix();
 
-    // 1. Put the "camera" in thte right place for all actions
+    // 1. Put the "camera" in the right place for all actions
 	glRotatef(-cam->roll,    0, 0, 1);
 	glRotatef(-cam->pitch,   1, 0, 0);
 	glRotatef(-cam->heading, 0, 1, 0);
@@ -942,8 +946,8 @@ void GLView::drawCell(Cell *cell) {
 #ifndef IMMUNEBOTS_NOGL
 void GLView::drawProgressBar(float completed) {
 
-	int halfW = conf::WIDTH/2;
-	int halfH = conf::HEIGHT/2;
+	int halfW = 5000;//conf::WIDTH/2;
+	int halfH = 5000;//conf::HEIGHT/2;
 
 	int boxW = 180*2;
 	int boxH = 100*2;

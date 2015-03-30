@@ -33,7 +33,7 @@ void printHelp();
 
 int main(int argc, char **argv) {
 
-	float version = 1.0004;
+	float version = 1.0007;
 
 	/*
 	 * Version differences (v brief):
@@ -43,15 +43,22 @@ int main(int argc, char **argv) {
 	 *  		Also static linking to the boost libraries (default).
 	 *  1.0003: Addition of the EventsList, i.e. adding of CTL at ratio E:T at a future time.
 	 *  1.0004: Random seed taken from /dev/urandom [linux only] instead of time(0).
+	 *  1.0005: Added new Event ('Event AddWhen 10CTL@100Infected' => "Add 10 CTL When Infected == 100").
+	 *  		Rewrote the update stats and write_report code.
+	 *  1.0006: Added new Event ('Event EndAfter 10Infected@100Infected' => "End when Infected count reaches 10 from 100").
+	 *  		Now quits with error if trying to place more cells than the world defaults permit.
+	 *  1.0007: New End Condition ('Event End 3d@1000Infected' => "End 3 days after Infected count reached 1000").
+	 *  		CTL now log how much time they spend in each state (move, scan, lyse) if stats_extra is enabled.
+	 *   		Minor corrections to the CTL code.
 	 *
 	 */
 
 
-	cout <<"  _                                            _             _        " << endl;
-	cout <<" (_) _ __ ___   _ __ ___   _   _  _ __    ___ | |__    ___  | |_  ___ " << endl;
-	cout <<" | || '_ ` _ \\ | '_ ` _ \\ | | | || '_ \\  / _ \\| '_ \\  / _ \\ | __|/ __|" << endl;
-	cout <<" | || | | | | || | | | | || |_| || | | ||  __/| |_) || (_) || |_ \\__ \\" << endl;
-	cout <<" |_||_| |_| |_||_| |_| |_| \\__,_||_| |_| \\___||_.__/  \\___/  \\__||___/" << endl << endl;
+	cout <<"  _                                            _             _        " 		<< endl;
+	cout <<" (_) _ __ ___   _ __ ___   _   _  _ __    ___ | |__    ___  | |_  ___ " 		<< endl;
+	cout <<" | || '_ ` _ \\ | '_ ` _ \\ | | | || '_ \\  / _ \\| '_ \\  / _ \\ | __|/ __|" 	<< endl;
+	cout <<" | || | | | | || | | | | || |_| || | | ||  __/| |_) || (_) || |_ \\__ \\" 		<< endl;
+	cout <<" |_||_| |_| |_||_| |_| |_| \\__,_||_| |_| \\___||_.__/  \\___/  \\__||___/" 	<< endl << endl;
 
 	cout << "      Version " << version <<
 			", adapted from Andrej Karpathy's Scriptbots" << endl <<
@@ -74,10 +81,9 @@ int main(int argc, char **argv) {
 	cout << "Random seed (from /dev/urandom): " << seed << endl << endl;
 
     ImmunebotsSetup *is = new ImmunebotsSetup();
-    World *world = new World();
+    World *world = new World(is);
 
     // Let world & setup see each other
-    world->setImmunebotsSetup(is);
     is->setWorld(world);
 
     // Sort out the command line arguments after creating (an empty) world
@@ -92,7 +98,7 @@ int main(int argc, char **argv) {
     	GLVIEW->setPaused(false);
     }
 
-    cout << "Finished setting up config, the world and GLView" << endl << endl;
+    cout << "Finished setting up config, the world and GLView." << endl << endl;
 
     // Check if we're running in X (useGlut) or command-line mode (!useGlut)
     if (!is->useGlut) {
@@ -115,8 +121,8 @@ int main(int argc, char **argv) {
 
     } else {
     	// Print out keys - only relevant if we have visualisation
-    	printf("Setup Menu:\n r=reset view, Esc=quit\n");
-        printf("Simulation menu:\n p=pause, d=drawing on/off (for faster computation), +=faster, -=slower, -->=fast forward to next day\n\n");
+    	printf("Setup Menu:\n  r=reset view, Esc=quit\n");
+        printf("Simulation menu:\n  p=pause, d=drawing on/off (for faster computation), +=faster, -=slower, -->=fast forward to next day\n\n");
     }
 
 /* GL-related functions */
@@ -125,7 +131,7 @@ int main(int argc, char **argv) {
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_ALPHA?
     glutInitWindowPosition(30,30);
     glutInitWindowSize(conf::WWIDTH,conf::WHEIGHT);
-    glutCreateWindow("Immunebots");
+    int mainwindow = glutCreateWindow("Immunebots");
     glewInit();
 
     // Initialise and create the Tw menu (only display the setup menu at the start)
@@ -164,6 +170,7 @@ int main(int argc, char **argv) {
 
 // Parses the command line options using getopt and updates the ImmunebotsSetup
 void processArguments(int argc, char **argv, ImmunebotsSetup *is) {
+
 	int o;
 
 	cout << "Processing arguments: " << endl;
@@ -213,7 +220,7 @@ void processArguments(int argc, char **argv, ImmunebotsSetup *is) {
 void printHelp() {
 	cout << " Displaying command line options:" << endl;
 	cout << "   -a\t\tAutomate simulation start and exit program when done" << endl;
-	cout << "   -d\t\tTurn draw off (implies -a, require -s)" << endl;
+	cout << "   -d\t\tTurn draw off (implies -a, requires -c)" << endl;
 	cout << "   -e <time>\tRun simulation until <time>, e.g. '84600s' or '7d'" << endl;
 	cout << "   -h\t\tDisplay help (this screen)" << endl;
 	cout << "   -i <run id>\tSet run ID (overrides config file run ID)" << endl;

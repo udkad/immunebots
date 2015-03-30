@@ -12,6 +12,7 @@
 #include "World.h"
 #include "AbstractAgent.h"
 #include "ImmunebotsSetup.h"
+//#include <>
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
@@ -19,13 +20,15 @@
 #include <boost/serialization/export.hpp>
 #endif
 
-static const int STATE_MOVE  = 0;
-static const int STATE_SENSE = 1;
-static const int STATE_KILL  = 2;
-
 class CTL: public AbstractAgent {
 
 public:
+
+	static const int STATE_MAX   = 3;
+	static const int STATE_MOVE  = 0;
+	static const int STATE_SENSE = 1;
+	static const int STATE_KILL  = 2;
+
 	CTL();
 	CTL(int,int,ImmunebotsSetup*);
 	virtual ~CTL();
@@ -34,6 +37,9 @@ public:
 	void drawAgent(GLView * const);
 	void setInput(float dt, World * const);
 	void doOutput(float dt, World * const);
+
+	// Pass in a 2D vector of dim 3x(CTL number). CTL pushes on the fraction of time spent in each of the 3 states.
+	void getStateFraction( vector< vector<float> >& );
 	void printInfo();
 
 private:
@@ -45,6 +51,10 @@ private:
 	Cell *lastCell;
 	float timer;
 	float cellshadow[9][2];
+
+	// Time spent in each state
+	float timekeeper[STATE_MAX];
+	vector<float> timefrac;
 
 	/* Helper functions */
 	float getPersistenceLength(World *); // returns a persistence length between (4.0,6.0)

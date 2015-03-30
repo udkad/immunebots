@@ -35,7 +35,7 @@ Cell::Cell(int x, int y, ImmunebotsSetup * ibs) {
 void Cell::init(ImmunebotsSetup * ibs){
 
 	// Cells have a position, and a speed
-    pos   = Vector2f(randf(0,conf::WIDTH),randf(0,conf::HEIGHT));
+    pos   = Vector2f(randf(0,ibs->getParm("WIDTH",0)),randf(0,ibs->getParm("HEIGHT",0)));
     angle = randf(-M_PI,M_PI);
     speed = 0.00001;
 
@@ -69,7 +69,7 @@ void Cell::drawAgent(GLView * v) {
 }
 
 void Cell::setScanTime(float wt) {
-	lastScanTime=wt;
+	lastScanTime = wt;
 }
 
 // Infected cells take input, N and S do nothing
@@ -89,6 +89,7 @@ void Cell::doOutput(float dt, World *w) {
 		} else if ( randf(0,1) <= r_vproduction*dt ) {
 			Virion *v = new Virion(this, w->ibs);
 			w->addAgent( v );
+			w->stats->virion++;
 		}
 	} else if (agent_type == AGENT_INFECTED_NOVIRIONS) {
 		if ( randf(0,1) <= r_death*dt ) {
@@ -97,7 +98,11 @@ void Cell::doOutput(float dt, World *w) {
 			w->EventReporter(World::EVENT_INFECTEDDEATH_VIRUS);
 		} else if ( randf(0,1) <= w->ibs->getParm("r_vinfect",0.00005f)*dt ) { // else pick a susceptible cell at random and infect!
 			// pick a susceptible cell at random and infected as AGENT_INFECTED_NOVIRIONS
-			w->infectCells(1, true);
+			if ( w->stats->susceptible > 0 ) {
+				w->infectCells(1, true);
+				w->stats->infected++;
+				w->stats->susceptible--;
+			}
 		}
 	}
 

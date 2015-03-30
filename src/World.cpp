@@ -26,12 +26,15 @@
 
 using namespace std;
 
+// Simple sorter for the events (sorts by execution time).
 static bool sortEvents( Event first, Event second ) {
 	return( first.time < second.time );
 }
 
-World::World(  ) {
+
+World::World( ImmunebotsSetup *is ) {
 	worldtime = 0.0;
+	ibs = is;
 
 	// Generate a unique ID for this world
 	UID = randi(0,RAND_MAX);
@@ -44,25 +47,16 @@ World::World(  ) {
 	DEFAULT_NUM_CELLS_TO_ADD = conf::DEFAULT_NUM_CELLS_TO_ADD;
 
     // Initialise the patch (infected island) and CellShadow layers
-    for (int x=0;x<conf::WIDTH;x++) {
-    	patch.push_back( vector<bool>(conf::HEIGHT,false) );
-    	CellShadow.push_back( vector<Cell*>(conf::HEIGHT,(Cell*)0) );
-    }
-
-    // Clear the patchVector as well
-    patchV.clear();
+	//CellShadowBool = new bool[is->getParm("WIDTH",conf::DefaultWidth)*is->getParm("HEIGHT",conf::DefaultHeight)];
+	setWorldDimensions(is->getParm("WIDTH",conf::DefaultWidth), is->getParm("HEIGHT",conf::DefaultHeight));
 
     // Create the statistics module
 	stats = (Statistics*) malloc( sizeof( Statistics ) );
 	stats->scan.reserve(5);
-	updateStats(true);
+	stats->force_refresh = false;
 
-    // Initialise the boundary box (to very wrong numbers)
+	// Initialise the boundary box (to very wrong numbers)
     resetBoundingBox();
-}
-
-void World::setImmunebotsSetup(ImmunebotsSetup* is) {
-	ibs = is;
 }
 
 World::~World() {
@@ -89,24 +83,41 @@ void World::copyColourArray(float wc[], const float cc[]) {
 void World::setPatch(int x, int y) {
 	// We need to maintain two containers
 	// Boundary of canvas exceeded - return! (or risk overruns)
-	if ( x<0 || y<0 || x>conf::WIDTH || y>conf::HEIGHT ) return;
+	if ( x<0 || y<0 || x>ibs->getParm("WIDTH",0) || y>ibs->getParm("HEIGHT",0) ) return;
 
 	// If there isn't a patch at x,y already, put one there and set the bounding box
 	if (!patch[x][y]) {
-		patchV.push_back( (x-1)*conf::WIDTH + y );
+		patchV.push_back( (x-1)*ibs->getParm("WIDTH",0) + y );
 		patch[x][y] = true;
 		// Check if the bounding box needs resetting
 		checkBoundingBox(x,y);
 	}
 }
 
+// Given a width and height, sets up the patch and cellshadow datat structures.
+// Note: everything in previous patch and cellshadow is overwritten.
+void World::setWorldDimensions(int w, int h) {
+    for (int x=0;x<w;x++) {
+    	patch.push_back( vector<bool>(h,false) );
+    	CellShadow.push_back( vector<Cell*>(h,(Cell*)0) );
+    	CellShadowBool.push_back( vector<bool>(h,false) );
+    }
+    // Allocate and clear the CellShadow Vector
+    //if (CellShadowBool!=0) delete [] CellShadowBool;
+    //CellShadowBool = new bool[w*h];
+    //for (int i=0; i<w*h; i++) CellShadowBool[i] = false;
+    //CellShadowBool.clear();
+    // Clear the patchVector as well
+    patchV.clear();
+}
+
 void World::resetBoundingBox() {
-	bounding_min = Vector2f(conf::WIDTH,conf::HEIGHT);
+	bounding_min = Vector2f(ibs->getParm("WIDTH",0),ibs->getParm("HEIGHT",0));
 	bounding_max = Vector2f(0,0);
 
 	// Loop through patches
 	for (int p=0; p<(int)patchV.size(); p++) {
-		checkBoundingBox(patchV[p]/conf::WIDTH,patchV[p]%conf::WIDTH);
+		checkBoundingBox(patchV[p]/ibs->getParm("WIDTH",0),patchV[p]%ibs->getParm("WIDTH",0));
 	}
 
 	// Loop through cells
@@ -119,8 +130,8 @@ void World::checkBoundingBox(int x,int y) {
 	int b = 15;
 	if ( x - b < bounding_min.x ) bounding_min.x = max(0, x-b);
 	if ( y - b < bounding_min.y ) bounding_min.y = max(0, y-b);
-	if ( x + b > bounding_max.x ) bounding_max.x = min(x+b, conf::WIDTH);
-	if ( y + b > bounding_max.y ) bounding_max.y = min(y+b, conf::HEIGHT);
+	if ( x + b > bounding_max.x ) bounding_max.x = min(x+b, ibs->getParm("WIDTH", 0));
+	if ( y + b > bounding_max.y ) bounding_max.y = min(y+b, ibs->getParm("HEIGHT",0));
 
 	// Set bounding box area (Note: margin is hard-coded as 15um, but as a cell is "detected" at its origin, we take 5um (radius) off).
 	// Note: This is fairly specific to ALL cells having a radius of 5um.
@@ -132,8 +143,8 @@ void World::checkBoundingBox(int x,int y) {
 
 // Overload the above function (single int, converted to an x,y coord)
 void World::setPatch(int i) {
-	int x = int(i/conf::WIDTH);
-	int y = i%conf::WIDTH;
+	int x = int(i/ibs->getParm("WIDTH",0));
+	int y = i%ibs->getParm("WIDTH",0);
 	return setPatch(x,y);
 }
 
@@ -141,18 +152,26 @@ float World::getWorldTime() {
 	return worldtime;
 }
 
-void World::update(bool writeReport) {
+void World::update() {
 
 	// In each update cycle, do the following:
+	//  0. Do stats
 	//  1. Process time
 	//  2. Process events (this may activate agents, introduce new agents, etc)
 	//  3. Set inputs for the active agents list, i.e. provide each active agent with requested information, e.g. nearby agents, time
 	//  4. Process actions for the active agents list, i.e. allow agents to move/update their position, produce offspring, die
     //  5. Tidy up (remove dead stuff)
 
-	// Write the report at time 0 and every 60 (? seems to be 50) thereafter.
-	if (writeReport || worldtime==0.0) {
-		this->writeReport(worldtime==0.0);
+	// 0. If time 0, then update stats (should have already been done) and write the report for the first time.
+	if (worldtime==0.0) {
+		this->updateStats(true);
+		this->writeReport(true);
+	} else if ( stats->force_refresh || ( int(worldtime) % ibs->getParm("update_stats", 300) ) == 0 ) {
+		this->updateStats(false);
+		if ( stats->force_refresh || ( int(worldtime) % ibs->getParm("report_time", 300) ) == 0 ) {
+			this->writeReport(false);
+			stats->force_refresh = false;
+		}
 	}
 
     // 1. Process time, including recalculating the timestep
@@ -188,14 +207,12 @@ void World::update(bool writeReport) {
     // 5. Tidy Up
     vector<AbstractAgent*>::iterator iter = agents.begin();
     while ( iter != agents.end() ) {
-
     	// If this agent is inactive, remove from the vector (and use the newly returned iterator)
     	if ( ((AbstractAgent*)(*iter))->isActive() ) {
     		++iter;
     	} else {
     		iter = agents.erase(iter);
     	}
-
     }
 }
 
@@ -204,9 +221,13 @@ void World::EventReporter(int event_type) {
 	switch (event_type) {
 		case EVENT_INFECTEDDEATH_LYSIS:
 			stats->infected_lysis++;
+			stats->infected--;
+			stats->dead++;
 			break;
 		case EVENT_INFECTEDDEATH_VIRUS:
 			stats->infected_death++;
+			stats->infected--;
+			stats->dead++;
 			break;
 		case EVENT_FAILEDINFECTION:
 			stats->failed_infection++;
@@ -242,7 +263,7 @@ void World::placeCells() {
 
 	// Step through the patch vector to find the last patch and first patch
 	int lastPatch = 0;
-	int firstPatch = conf::WIDTH*conf::HEIGHT;
+	int firstPatch = ibs->getParm("WIDTH",0)*ibs->getParm("HEIGHT",0);
 	for ( int p=0; p<(int)patchV.size(); p++ ) {
 		if (patchV[p]>lastPatch)  lastPatch  = patchV[p];
 		if (patchV[p]<firstPatch) firstPatch = patchV[p];
@@ -429,14 +450,17 @@ int World::checkEvents(int t) {
 
 // Given an event, run it now! Should really be "event.activate()", but oh well.
 void World::activateEvent(Event *e) {
-	// 1. Figure out how many to add (either absolute or ratio)
+
+	// 1. Figure out how many of the desired type (sually CTL or Infected) to add (either absolute or ratio)
 	int number = 0;
+	int currentnumber = 0;
 
 	switch (e->event) {
 		case EVENTSLIST_ADDETRATIO:
 			// E:T depends on the number of Infected cells
-			this->updateStats(false); // force update
-			number = floor(stats->infected * e->number + 0.5); // Get ratio and round to nearest whole int
+			//this->updateStats(false); // force update: NB. don't need full update, only Infected cells
+			currentnumber = getCurrentPopulation(AbstractAgent::AGENT_INFECTED) + getCurrentPopulation(AbstractAgent::AGENT_INFECTED_NOVIRIONS);
+			number = floor(currentnumber * e->number + 0.5); // Get ratio and round to nearest whole int
 			break;
 		case EVENTSLIST_ADDABSOLUTE:
 			number = floor(e->number);
@@ -444,41 +468,117 @@ void World::activateEvent(Event *e) {
 		case EVENTSLIST_ADDWHEN:
 			// This only activates if the condition is true (usually "Infected cell count is x")
 			// Return if the condition is reached, else continue, drop the required number of agents and mark event as fired.
+			//this->updateStats(false); // force update: don't need full update, only <condition_type> cells
+			currentnumber = getCurrentPopulation(e->condition_type);
 			switch (e->condition_type) {
-				case AbstractAgent::AGENT_CTL: 					if (stats->ctl            < e->condition_number) {return;} else {break;}
-				case AbstractAgent::AGENT_INFECTED:				if (stats->infected       < e->condition_number) {return;} else {break;}
-				case AbstractAgent::AGENT_INFECTED_NOVIRIONS:	if (stats->infected       < e->condition_number) {return;} else {break;}
-				case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:		if (stats->notsusceptible < e->condition_number) {return;} else {break;}
-				case AbstractAgent::AGENT_SUSCEPTIBLE:			if (stats->susceptible    < e->condition_number) {return;} else {break;}
-				case AbstractAgent::AGENT_VIRION:				if (stats->virion         < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_CTL: 					if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_INFECTED:				if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_INFECTED_NOVIRIONS:	if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:		if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_SUSCEPTIBLE:			if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_VIRION:				if (currentnumber < e->condition_number) {return;} else {break;}
+				default: return;
 			}
 			number = floor(e->number);
 			break;
+		case EVENTSLIST_ENDAFTER:
+			// This, like ADDWHEN, will be checked every second, but only activates if the condition is true.
+			// Deliberate fallthrough!
+		case EVENTSLIST_ENDTIME:
+			currentnumber = getCurrentPopulation(e->condition_type);
+			switch (e->condition_type) {
+				case AbstractAgent::AGENT_CTL: 					if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_INFECTED:				if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_INFECTED_NOVIRIONS:	if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:		if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_SUSCEPTIBLE:			if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_VIRION:				if (currentnumber < e->condition_number) {return;} else {break;}
+				default: return;
+			}
+			break;
 	}
 
-	// 2. Add X of the appropriate type
-	switch (e->agent) {
-		case AbstractAgent::AGENT_CTL:
-			this->dropCTL(number);
-			break;
-		case AbstractAgent::AGENT_SUSCEPTIBLE:
-			cout << "Add susceptible cells doesn't currently work! Fix this!" << endl;
-			break;
+	// 2. Do the required action. If it's an ADD event, then add X of the appropriate type.
+	// If it's the EndWhen event, then stick the correct trigger in ibs
+
+	if (e->event == EVENTSLIST_ENDAFTER) {
+		switch (e->agent) {
+			case AbstractAgent::AGENT_INFECTED: //deliberate fall-through
+			case AbstractAgent::AGENT_INFECTED_NOVIRIONS:
+				ibs->setParm("end_infected_le",1);
+				ibs->setParm("end_infected_levalue", e->number );
+				ibs->setParm("update_stats", 1);
+				break;
+		}
+	} else if (e->event == EVENTSLIST_ENDTIME) {
+		// Change end time to new end time (note: overwrites old endtime)
+		ibs->endTime = worldtime + e->number;
+		//cout << "";
+	} else if (e->event != EVENTSLIST_ENDAFTER) {
+		switch (e->agent) {
+			case AbstractAgent::AGENT_CTL:
+				this->dropCTL(number);
+				stats->ctl = stats->ctl + number;
+				break;
+			case AbstractAgent::AGENT_SUSCEPTIBLE:
+				cout << "Add susceptible cells doesn't currently work! Fix this!" << endl;
+				stats->susceptible = stats->susceptible + number;
+				break;
+			default:
+				cout << "ERROR: Cannot add required cell type ("<< e->agent <<")! Fix this!" << endl;
+				break;
+		}
 	}
 
 	// If we've reached here then the event has been activated.
 	e->fired = true;
+	stats->force_refresh = true; /* force a stats and report refresh as an event has triggered */
 
 	// Print it out..
-	cout << " - Activating ";
-	e->prettyprint();
-	cout << endl;
+	cout << " - ["<<worldtime<<"] Activating "; e->prettyprint(); cout << endl;
+}
 
+int World::getCurrentPopulation(int agent_type) {
+
+	int population = 0;
+
+	vector<Cell*>::iterator cit;
+	vector<AbstractAgent*>::iterator agent;
+
+	switch (agent_type) {
+
+		// Fall through #1: The cells vector for all cells (Dead, NS, S and I)
+		case AbstractAgent::AGENT_DEADCELL:
+		case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:
+		case AbstractAgent::AGENT_INFECTED:
+		case AbstractAgent::AGENT_INFECTED_NOVIRIONS:
+			for ( cit = cells.begin(); cit != cells.end(); ++cit) {
+				if ( ((AbstractAgent*)(*cit))->getAgentType() == agent_type ) population++;
+			}
+			break;
+
+		// Fall through #2: The agents vector for ctl and virions
+		case AbstractAgent::AGENT_CTL:
+		case AbstractAgent::AGENT_VIRION:
+			for ( agent = agents.begin(); agent != agents.end(); ++agent) {
+				// Increment the right counter
+				switch ( ((AbstractAgent*)(*agent))->getAgentType() == agent_type ) population++;
+			}
+			break;
+	}
+
+	return(population);
 }
 
 void World::resetShadowLayer() {
 	// First, reset to 0
-	for (int x=0;x<conf::WIDTH;x++) for (int y=0;y<conf::HEIGHT;y++) CellShadow[x][y] = 0;
+	for (int x=0;x<ibs->getParm("WIDTH",0);x++) {
+		for (int y=0;y<ibs->getParm("HEIGHT",0);y++) {
+			CellShadow[x][y] = 0;
+			CellShadowBool[x][y] = false;
+		}
+	}
+	//for (int i=0; i<ibs->getParm("WIDTH",0)*ibs->getParm("HEIGHT",0); i++) CellShadowBool[i] = false;
 
 	// Then, setup through the cells vector
 	for (int i=0;i<(int)cells.size();i++) {
@@ -503,6 +603,8 @@ void World::_setCellShadow(Cell *c, Cell * value) {
 			if ( ( pow(c->pos.x-x,2) + pow(c->pos.y-y,2) ) < rsq ) {
 				// Now add c at CellShadow[x][y]
 				CellShadow[x][y] = value;
+				CellShadowBool[x][y] = true;
+				//CellShadowBool[(x-1)*ibs->getParm("HEIGHT",0)+(y-1)] = true;
 			}
 		}
 	}
@@ -545,17 +647,17 @@ void World::clearAllCells() {
 	resetBoundingBox();
 }
 
-// Check if the given coord is over a cell, return true/false
+// Check if the given coord is over a cell, return false (0) if not, the cell pointer if so.
 bool World::isOverCell(int x, int y) {
-	if (x>0 && x<conf::WIDTH && y>0 && y<conf::HEIGHT) {
-		return( CellShadow[x][y] > 0 );
+	if (x>0 && x<ibs->getParm("WIDTH",0) && y>0 && y<ibs->getParm("HEIGHT",0)) {
+		return( CellShadowBool[x][y] );
+		//return( CellShadowBool[(x-1)*ibs->getParm("HEIGHT",0)+(y-1)] );
 	}
 	return(false);
 }
 
-// Return the cell at coord x,y (0 if nothing is there)
-Cell* World::getCell(int x, int y) {
-	return( (Cell*)CellShadow[x][y] );
+Cell * World::getCell(int x, int y) {
+	return( CellShadow[x][y] );
 }
 
 // If we click on a non-susceptible or susceptible cell, we infect it
@@ -599,6 +701,37 @@ void World::infectCells(int total, bool onlySusceptible) {
 // Saves most of the Stats module to a csv
 void World::writeReport(bool firstTime) {
 
+	//cout << "   - writeReport also called ["<<worldtime<<"s]"<<endl;
+
+	// Bit nasty and inelegant having this code here, but it's only needed when we write out to csv.
+	if ( ibs->getParm("stats_extra",0) ) {
+		// Empty the 'fraction of time spent in each state' vector
+		stats->ctlsf.assign(3,0);
+		// Create a 3-rowed 2D vector (note: empty).
+		vector< vector<float> > ctlsfull( CTL::STATE_MAX, vector<float>() );
+
+		vector<AbstractAgent*>::iterator agent;
+		for ( agent = agents.begin(); agent != agents.end(); ++agent) {
+			if ( ((AbstractAgent*)(*agent))->getAgentType() == AbstractAgent::AGENT_CTL ) {
+			// Work out the fraction of time each CTL spent in each of the 3 states.
+				((CTL*)(*agent))->getStateFraction( ctlsfull );
+			}
+		}
+
+		// Aggregate the CTL fractional state vector (ctlsfull) into ctlsf
+		vector<float> localsf(CTL::STATE_MAX, 0);
+
+		for (int i=0; i < CTL::STATE_MAX; i++ ) {
+			for( int j = 0 ; j < ctlsfull[i].size() ; j++ ) {
+				localsf[i] += ctlsfull[i][j];
+			}
+		}
+
+		// And now divide through by ctlsfull.size()
+		for (int i=0; i<CTL::STATE_MAX; i++) stats->ctlsf[i] = localsf[i] / ctlsfull[i].size();
+	}
+
+
 	char buffer[255];
 	// TODO: Check that logs/ exist
 	sprintf(buffer, "%s/%s.csv", ibs->reportdir.c_str(), ibs->reportfilename.c_str());
@@ -625,7 +758,7 @@ void World::writeReport(bool firstTime) {
 		logfile << "time,susceptible,infected,dead,virions,ctl";
 		if (ibs->getParm("stats_extra",0)) {
 			// Add any other stats output headers to the logfile
-			logfile << ",scan_avg";
+			logfile << ",scan_avg,ctl_sm,ctl_ss,ctl_sl";
 		}
 		logfile << endl;
 	} else {
@@ -638,6 +771,7 @@ void World::writeReport(bool firstTime) {
 	if ( ibs->getParm("stats_extra",0) ) {
 		// Add any other stats output headers to the logfile
 		logfile << "," << stats->scan_average;
+		for (int i=0; i<CTL::STATE_MAX;i++) logfile << "," << stats->ctlsf[i];
 	}
 	logfile << endl;
 
@@ -647,13 +781,8 @@ void World::writeReport(bool firstTime) {
 
 
 void World::reset() {
+	setWorldDimensions(ibs->getParm("WIDTH",0),ibs->getParm("HEIGHT",0));
 
-    for (int x=0;x<conf::WIDTH;x++) {
-    	patch.push_back( vector<bool>(conf::HEIGHT,false) );
-    	CellShadow.push_back( vector<Cell*>(conf::HEIGHT,(Cell*)0) );
-    }
-
-	patchV.clear();
 	cells.clear();
     agents.clear();
 
@@ -679,14 +808,14 @@ void World::drawBackground(View* view, bool simulationmode) {
 		glBegin(GL_QUADS);
 		glColor4f(0.1,0.9,1.0,0.5);
 		glVertex3f(0,0,-conf::FAR_PLANE);
-		glVertex3f(0,conf::HEIGHT,-conf::FAR_PLANE);
-		glVertex3f(conf::WIDTH,conf::HEIGHT,-conf::FAR_PLANE);
-		glVertex3f(conf::WIDTH,0,-conf::FAR_PLANE);
+		glVertex3f(0,ibs->getParm("HEIGHT",0),-conf::FAR_PLANE);
+		glVertex3f(ibs->getParm("WIDTH",0),ibs->getParm("HEIGHT",0),-conf::FAR_PLANE);
+		glVertex3f(ibs->getParm("WIDTH",0),0,-conf::FAR_PLANE);
 		glEnd();
 
 		// b. Draw the patches
 		for (int i=0; i<(int)patchV.size(); i++) {
-			view->drawDot( int(patchV[i]/conf::WIDTH), (patchV[i]%conf::WIDTH), (-conf::FAR_PLANE+1.0) );
+			view->drawDot( int(patchV[i]/ibs->getParm("WIDTH",0)), (patchV[i]%ibs->getParm("WIDTH",0)), (-conf::FAR_PLANE+1.0) );
 		}
 	} else {
 		// Simulation mode
@@ -840,24 +969,25 @@ void World::loadLayout() {
 #endif
 }
 
-void World::updateStats(bool resetEvents) {
+/* updateStatsFull:
+ *
+ * This  function counts the number of agents in the system by type,
+ * and then calls updateStats (with reset enabled). updateStats works
+ * out the cell densities and the 5-min averaged scan rate.
+ *
+ */
+void World::updateStatsFull() {
 
 	int total_cells = 0, ctl = 0, notsusceptible = 0, infected = 0, susceptible = 0, dead = 0, virion = 0;
 
-	if (resetEvents) {
-		stats->infected_death = 0;
-		stats->infected_lysis = 0;
-		stats->scan_complete  = 0;
-		stats->scan_average   = 0.0;
-		stats->lastCalled     = worldtime;
-		stats->scan.assign(5,-1);
-	}
-
-	// Update the cell-related stats
+	/* CELLS: INFECTED, SUSCEPTIBLE AND DEADCELLS */
 	vector<Cell*>::iterator cit;
 	for ( cit = cells.begin(); cit != cells.end(); ++cit) {
 		// Increment the right counter
 		switch ( ((AbstractAgent*)(*cit))->getAgentType() ) {
+			case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:
+				notsusceptible++;
+				break;
 			case AbstractAgent::AGENT_SUSCEPTIBLE:
 				susceptible++;
 				break;
@@ -873,7 +1003,7 @@ void World::updateStats(bool resetEvents) {
 		total_cells++;
 	}
 
-	// Update the ctl & virion stats
+	/* CTL AND VIRIONS */
 	vector<AbstractAgent*>::iterator agent;
 	for ( agent = agents.begin(); agent != agents.end(); ++agent) {
 		// Increment the right counter
@@ -889,6 +1019,42 @@ void World::updateStats(bool resetEvents) {
 		}
 	}
 
+	// Update the absolute cell/virion numbers
+	stats->ctl 			  = ctl;
+	stats->total_cells 	  = total_cells;
+	stats->notsusceptible = notsusceptible;
+	stats->susceptible 	  = susceptible;
+	stats->infected 	  = infected;
+	stats->dead 		  = dead;
+	stats->virion		  = virion;
+
+	World::updateStats(true);
+
+}
+
+/*
+ * Called from:
+ *  - update() when the reporting interval is reached [writeReport is subsequently called]
+ *  - some event checks which rely on exact numbers of infected cells
+ *  - when *something* sets stats->force_refresh to TRUE
+ *
+ * updateStats works out the cell densities and the 5-min averaged scan rate.
+ *
+ */
+void World::updateStats(bool resetEvents) {
+
+	//cout << " [DEBUG] UpdateStats called at "<<worldtime<<"s. Intervals are: " << ibs->getParm("update_stats",300) <<"s (stats) and " << ibs->getParm("report_time",300) << "s (report)."<< endl;
+
+	// This should only be called at the very beginning of the simulation.
+	if (resetEvents) {
+		stats->infected_death = 0;
+		stats->infected_lysis = 0;
+		stats->scan_complete  = 0;
+		stats->scan_average   = 0.0;
+		stats->lastCalled     = worldtime;
+		stats->scan.assign(5,-1);
+	}
+
 	// Every time update is called, calculate the avg cell scan rate per ctl. Smooth over reporting period * 5.
 	// Limit this to once every minute, at least!
 	if ( stats->lastCalled + 60 <= worldtime ) {
@@ -901,32 +1067,21 @@ void World::updateStats(bool resetEvents) {
 			}
 		}
 		stats->scan[0] = stats->scan_complete;
-		fiveminscan += stats->scan_complete;
+		fiveminscan   += stats->scan_complete;
 		//cout << "[DEBUG:"<<worldtime<<"] For this reporting interval, "<< stats->scan_complete << " cells were scanned (";
 		stats->scan_complete = 0;
 		// Now calculate the (reporting_time*5) smoothed average
 		stats->scan_average = fiveminscan / fivemindiv;
 
 		// Calculate the average number of cells scanned every minute, reset every 5 mins.
-		if ( ctl == 0 ) {
+		if ( stats->ctl == 0 ) {
 			stats->scan_average = 0;
 		} else {
-			stats->scan_average = stats->scan_average * 60 / (worldtime - stats->lastCalled) / ctl;
+			stats->scan_average = stats->scan_average * 60 / (worldtime - stats->lastCalled) / stats->ctl;
 		}
-
-		//cout << stats->scan_average << " cells/min/ctl)"<< endl;
 
 		stats->lastCalled = worldtime;
 	}
-
-	// Update the absolute cell/virion numbers
-	stats->ctl = ctl;
-	stats->total_cells = total_cells;
-	stats->notsusceptible = notsusceptible;
-	stats->susceptible = susceptible;
-	stats->infected = infected;
-	stats->dead = dead;
-	stats->virion = virion;
 
 	// Can't update the events here
 
@@ -934,23 +1089,24 @@ void World::updateStats(bool resetEvents) {
 	stats->ctl_per_mm2    = 0.0;
 	stats->virion_per_mm2 = 0.0;
 	if (stats->area_mm2>0.0) {
-		stats->ctl_per_mm2    = ctl/stats->area_mm2;
-		stats->virion_per_mm2 = virion/stats->area_mm2;
+		stats->ctl_per_mm2    = stats->ctl/stats->area_mm2;
+		stats->virion_per_mm2 = stats->virion/stats->area_mm2;
 	}
 
 	stats->ctl_per_cell = 0.0;
 	stats->virion_per_cell = 0.0;
-	int nonctlcells = total_cells - ctl;
+	int nonctlcells = stats->total_cells - stats->ctl;
 	if (nonctlcells>0) {
-		stats->ctl_per_cell = ctl/(float)nonctlcells;
-		stats->virion_per_cell = virion/(float)nonctlcells;
+		stats->ctl_per_cell    = stats->ctl/(float)nonctlcells;
+		stats->virion_per_cell = stats->virion/(float)nonctlcells;
 	}
 
 	stats->ctl_per_infected = 0.0;
-	if (infected>0) {
-		stats->ctl_per_infected = ctl/(float)infected;
+	if (stats->infected > 0) {
+		stats->ctl_per_infected = stats->ctl/(float)stats->infected;
 	}
 
 	stats->cell_area = nonctlcells * M_PI * pow(conf::BOTRADIUS,2) / 1000000.0;
+
 }
 

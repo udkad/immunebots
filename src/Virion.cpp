@@ -87,7 +87,8 @@ void Virion::setInput(float dt, World *w) {
 
 	// Check if on a susceptible cell, if so then chance of infection (during Output phase)
 	lifespan += dt;
-	if ( w->isOverCell(pos.x, pos.y) ) {
+
+	if (w->isOverCell(pos.x, pos.y)) {
 		Cell * newCell = w->getCell(pos.x, pos.y);
 
 		if (newCell != currentCell){
@@ -119,6 +120,7 @@ void Virion::doOutput(float dt, World *w) {
 		cout << this << " Virion DEAD!\n";
 		dead = true;
 		active = false; // Will be removed from the ActiveAgents queue (I think this is the only reference to the virion!)
+		w->stats->virion--;
 	} else if ( currentCell != 0
 			&& !currentCell->isInfected()
 			&&  currentCell->isSusceptible()
@@ -128,6 +130,9 @@ void Virion::doOutput(float dt, World *w) {
 				w->addAgent(currentCell);
 				active = false;
 				dead = true;
+				w->stats->virion--;
+				w->stats->infected++;
+				w->stats->susceptible--;
 	} else {
 		// Just move
 		pos.x += dt*speed*sin(angle);

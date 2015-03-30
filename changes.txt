@@ -1,5 +1,9 @@
 == Changelog
 
+Version 1.0007
+Backup date: 2011-12-02
+Added new Event ('Event AddWhen 10CTL@100Infected' => "Add 10 CTL When Infected == 100"). Rewrote the update stats and write_report code. Added new Event ('Event EndAfter 10Infected@100Infected' => "End when Infected count reaches 10 from 100"). Now quits with error if trying to place more cells than the world defaults permit. New End Condition ('Event End 3d@1000Infected' => "End 3 days after Infected count reached 1000"). CTL now log how much time they spend in each state (move, scan, lyse) if stats_extra is enabled. Minor corrections to the CTL code.
+
 Version 1.0004
 Backup date: 2011-10-25
 Addition of the EventsList, i.e. adding of CTL at ratio E:T at a future time (as mentioned in v1.0001c). Random seed taken from /dev/urandom (linux only) instead of time(0).

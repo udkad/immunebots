@@ -27,7 +27,7 @@ CTL::CTL(int x, int y, ImmunebotsSetup * ibs) {
 
 void CTL::init(ImmunebotsSetup * ibs) {
 	// CTL have a position, and a speed
-    pos   = Vector2f(randf(0,conf::WIDTH),randf(0,conf::HEIGHT));
+    pos   = Vector2f(randf(0,ibs->getParm("WIDTH",conf::DefaultWidth)),randf(0,ibs->getParm("HEIGHT",conf::DefaultHeight)));
     angle = randf(-M_PI,M_PI);
     speed = ibs->getParm("r_ctlspeed",1.0f);
     radius = conf::BOTRADIUS;
@@ -58,8 +58,9 @@ void CTL::init(ImmunebotsSetup * ibs) {
 
     memcpy( cellshadow, cellshadowinit, sizeof(cellshadowinit) );
     // How Very C! Probably should use a nested vector.
-    // Also, there shoudl only be one such vector per radius value, rather than one vector per CTL.
+    // Also, there should only be one such vector per radius value, rather than one vector per CTL.
 
+    for (int i=0; i<STATE_MAX; i++) { timekeeper[i] = 0.0f; }
 }
 
 CTL::~CTL() {
@@ -97,28 +98,23 @@ void CTL::drawAgent(GLView * v) {
 // CTL take input: check if they are on a cell (which may be infected)
 void CTL::setInput(float dt, World * w) {
 	lifespan += dt;
+	timekeeper[state] += dt;
 
 	// Is the CTL over a cell?
-
-	// New Code
-	for (int i=0; i<8; i++) {
-		if ( w->isOverCell(pos.x+cellshadow[i][0], pos.y+cellshadow[i][1]) ) {
+	for (int i=0; i<9; i++) {
+		if (w->isOverCell(pos.x+cellshadow[i][0], pos.y+cellshadow[i][1])) {
 			currentCell = w->getCell(pos.x+cellshadow[i][0], pos.y+cellshadow[i][1]);
 			break;
 		}
 	}
 
-	// Old Code
-	//if ( w->isOverCell(pos.x, pos.y) ) {
-	//	currentCell = w->getCell(pos.x, pos.y);
-	//}
 
 	if ( currentCell == 0 && state != STATE_MOVE ) {
 		cout << this << "CTL ERROR: Not on a cell but state is sense or kill ("<< state<< ")\n";
 	}
 
 	if (state == STATE_MOVE) {
-		// Decrement the persistence length "timer"
+		// Decrement the persistence length "timer" (in this case, timer is a ever-decreasing distance until a direction change happens)
 		timer -= dt*speed;
 
 		// If we're over a new cell, then "sense" it
@@ -135,17 +131,18 @@ void CTL::setInput(float dt, World * w) {
 		}
 
 		if (timer <= 0) {
+			// In scanning mode and have reached 0 (or less) on the timer (change states!):
+			w->EventReporter(World::EVENT_CTL_SCANCOMPLETE);
 			if (currentCell!=0 && currentCell->isInfected()) {
 				// Start killing the cell
 				state = STATE_KILL;
-				timer = (w->ibs->getParm("t_ctlhandle",30.0f) + randf(w->ibs->getParm("t_ctlhandle_minus",50-.0f),w->ibs->getParm("t_ctlhandle_plus",5.0f)))*60; // Killing takes about 30 mins (*60=s)
+				timer = (w->ibs->getParm("t_ctlhandle",30.0f) + randf(w->ibs->getParm("t_ctlhandle_minus",-5.0f),w->ibs->getParm("t_ctlhandle_plus",5.0f)))*60; // Killing takes about 30 mins (*60=s)
 			} else {
 				state = STATE_MOVE;
 				angle = randf(-M_PI,M_PI);
 				timer = getPersistenceLength(w);
 				lastCell = currentCell;
 				currentCell = 0;
-				w->EventReporter(World::EVENT_CTL_SCANCOMPLETE);
 			}
 		} // else do nothing.. just let timer tick down
 	} else if ( state == STATE_KILL ) {
@@ -234,6 +231,22 @@ void CTL::doOutput(float dt, World *w) {
 		// Check if we should draw this CTL cell
 		//drawable = true;//(pos.x < w->bounding_max.x && pos.x > w->bounding_min.x && pos.y < w->bounding_max.y && pos.y > w->bounding_min.y);
 	} // else: does nothing (sits on cell)
+
+}
+
+// Returns a 3-element vector of the time spent in each of the 3 states since the last call
+void CTL::getStateFraction( vector< vector<float> > &timefrac ) {
+	// Work out the fraction spent in each state.
+	float totaltime = 0.0;
+	for (int i=0; i<STATE_MAX; i++) totaltime += timekeeper[i];
+
+	// Make the fraction vector and reset timekeeper
+	for (int i=0; i<STATE_MAX; i++) {
+		float thisfrac = 0.0;
+		if ( totaltime > 0 ) { thisfrac = timekeeper[i] / totaltime; }
+		timefrac[i].push_back( thisfrac );
+		timekeeper[i] = 0.0;
+	}
 
 }
 

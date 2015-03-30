@@ -1,0 +1,122 @@
+# Immunebots setup file
+# Comments start with '#'. Case is insensitive.
+
+## A Note on Ordering:
+# Order of setup variables is frequently important. Try not to deviate from the sample setup file order.
+# In particular:
+#  - RunID must be set before the reportname is set
+#  - All !PLACE commands must be done after Cell-Type & Rate variables are specified.
+
+###########################
+#   S I M U L A T I O N   #
+###########################
+# Variables governing the simulation.
+# Possible variables:
+## - RunID <runid>: May be overriden on the command line.
+## - EndTime <seconds>: Time at which to end the simulation.
+##     Note: simulation will also end if there are no more agents and may be overriden on the command line.
+## - LayoutFile <filename>: should contain patch data, may contain non-susceptible cells, may contain
+## - PlaceCells {true,false}: if true will wipe any existing cells (incl. CTL?) from the layout and replace them with non-susceptible cells.
+#
+
+# ParentTemplate was 20110927.CTLOnlyModel.Search.v001
+
+RunID		20111011.CTLAtDayX.v001.Test
+
+EndCondition	endtime		16d	# ok-ok
+EndCondition	infectedpc_ge	0.6	# ok-ok
+EndCondition	infectedpc_eq	0.0	# ok-ok
+
+ReportDir	reports			# ok-ok
+ReportName	fromid			# ok-ok (sets csv filename to id ('fromid'), else to whatever the field is. ID must be set first.)
+ReportTime	10			# ok-ok (write out new report every x seconds)
+ReportOverwrite	1			# ok-ok
+
+Stats		extra			# ok-ok
+
+###########################
+#    P L A C E M E N T    #
+###########################
+# Agent number, composition and placement variables
+# Note: Ordering is not important - BUT ensure that variables (incl. rates) are set before the !PLACE command.
+# Note: these will be added in addition to the Layoutfile. (Unverified claim! To test).
+#
+
+Nonsusceptible	TOTALCOUNT	10000		# ok-ok
+Nonsusceptible	CELLSPACING	10		# ok-ok
+Nonsusceptible 	PLACEMENT	squaregrid	# ok-ok
+Nonsusceptible	SUSCEPTIBLEPC	25		# ok-ok
+
+Susceptible	PLACEMENT	random		# ok-ignored (always random)
+
+Infected	TOTALCOUNT	1		# ok-ok
+Infected	TYPE		virions		# ok-ok
+
+Virion		BOUNDARY	wrap		# virions will wrap at the boundary
+
+CTL		PLACEMENT	random		# ok-ignored (always random)
+CTL		TOTALCOUNT	0		# ok-ok
+CTL		BOUNDARY	wrap		# ok-ok
+
+###########################
+#        R A T E S        #
+###########################
+# Rates for the different agents. Can also be times (recommend "t_" prefix).
+# NOTE: ALWAYS IN SECONDS.
+#
+# Format: Rate	rate_name  {~~distribution~~,fixed parameter}
+#  - Non-susceptible: none
+#  - Susceptible: none
+#  - Infected: r_vproduction (v/s), r_ideath (/s)
+#  - Virion: r_vinfect (/s), r_vspeed (um/s)
+#  - CTL: r_ctlspeed, r_ctlpersist, t_ctlscan, t_ctlhandle_minus, t_ctlhandle_plus
+#
+
+# CTL rates
+Rate	r_ctlspeed	0.40		# Quite fast..
+Rate	r_ctlpersist	5.0		# persistence length of radius*w-5um.
+Time 	t_ctlscan	5.0		# Time spent sensing cells.
+
+# Virion rates
+Rate	r_vproduction	0.00175		# Gives a growth rate of ~100cell/day
+Rate	r_vspeed	0.1		# Virion speed
+Rate	r_vinfect	1		# Virion infection chance on encountering a cell (P=1)
+
+# Infected cell rates
+Rate 	r_ideath	0.000005787	# Infected cells die in ~2 days
+
+###########################
+#       E V E N T S       #
+###########################
+# Schedule in future events (i.e. adding X CTL at time t, or adding CTL at an E:T ratio of 5 at time t).
+# Format: Event event_type event_string
+#  - event_type is one of: AddAbsolute, AddETRatio
+#  - event_string is of format: <number><agent_type>@<time>
+#    - time can be 1d, 500s, 3m etc
+#
+# Examples:
+#   Event	AddETRatio	2.5CTL@1d
+#   Event	AddAbsolute	250CTL@3d
+#
+# Possible future extensions: NtoI (turn a non-susceptible cell, if any, into an infected cell).
+#
+
+Event	AddETRatio	2.5CTL@5000s
+
+###########################
+#     C O M M A N D S     #
+###########################
+# This will create the cell/agent topology from the previously set variables
+# Note: Ordering is important - any variables set after this point WILL NOT be applied to already placed cells or agents.
+!PLACE Nonsusceptible 	# Will also place susceptible cells
+!PLACE Infected 	# Will infect the required number of susceptible cells
+!PLACE CTL		# Will place CTL over the cells
+
+
+
+
+
+
+
+
+
