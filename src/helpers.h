@@ -6,7 +6,7 @@
 
 typedef struct {   /* Our stats module - gets updated every second */
 	int total_cells;					/* Total number of ALL cells incl. CTL  */
-	int notsusceptible, susceptible, infected;   		/* Cell types */
+	int notsusceptible, susceptible, infected, dead;   		/* Cell types */
 	int ctl;							/* CTL numbers */
 	int virion;
 	float ctl_per_mm2,  virion_per_mm2;	 /* Density of CTL and virions per mm2 */

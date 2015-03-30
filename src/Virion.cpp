@@ -15,7 +15,7 @@ Virion::Virion() {
 Virion::Virion(Cell *pCell, ImmunebotsSetup *ibs) {
 
 	// Set random direction
-	angle = randf(-M_PI, M_PI);
+	angle = randf(0, 2.0*M_PI);
 	speed = ibs->getParm("r_vspeed", 0.1f);
 
 	pos 	= pCell->pos;
@@ -23,6 +23,7 @@ Virion::Virion(Cell *pCell, ImmunebotsSetup *ibs) {
 	dead 	= false;
 	lifespan = 0.0;
     agent_type = AGENT_VIRION;
+    boundarycondition = ibs->getParm("v_boundary", BOUNDARY_DIE);
 
 	r_death  = 1/6 * 1/(60*60); 	/* 6 hours to clearance */
 	r_infect = ibs->getParm("r_vinfect", 0.1f); /* No idea, arbitrary value (ensure infection when hitting a cell) */
@@ -44,6 +45,7 @@ Virion::~Virion() {
 
 // This should only be called from the view!
 void Virion::drawAgent(GLView * v) {
+#ifndef IMMUNEBOTS_NOGL
 
 	if (!drawable) return;
 
@@ -76,6 +78,7 @@ void Virion::drawAgent(GLView * v) {
 		glVertex2f(pos.x, pos.y);
 		glEnd();
 
+#endif
 }
 
 void Virion::setInput(float dt, World *w) {
@@ -130,20 +133,54 @@ void Virion::doOutput(float dt, World *w) {
 		pos.x += dt*speed*sin(angle);
 		pos.y += dt*speed*cos(angle);
 
-		// Kill the virion if it goes off the screen
-		if ( pos.x < 0 || pos.x >= conf::WIDTH || pos.y < 0 || pos.y >= conf::HEIGHT ) {
-			active = false;
+		// Boundary conditions iff we're at a boundary
+		bool exceedxmin = (pos.x < w->bounding_min.x);
+		bool exceedxmax = (pos.x > w->bounding_max.x);
+		bool exceedymin = (pos.y < w->bounding_min.y);
+		bool exceedymax = (pos.y > w->bounding_max.y);
+
+		if ( exceedxmin || exceedxmax || exceedymin || exceedymax ) {
+			switch (boundarycondition) {
+				case BOUNDARY_WRAP:
+				    if      (exceedxmin) { pos.x = w->bounding_max.x; }
+				    else if (exceedxmax) { pos.x = w->bounding_min.x; }
+				    if      (exceedymin) { pos.y = w->bounding_max.y; }
+				    else if (exceedymax) { pos.y = w->bounding_min.y; }
+					break;
+				case BOUNDARY_STAY:
+				    if      (exceedxmin) { pos.x = w->bounding_min.x; }
+				    else if (exceedxmax) { pos.x = w->bounding_max.x; }
+				    if      (exceedymin) { pos.y = w->bounding_min.y; }
+				    else if (exceedymax) { pos.y = w->bounding_max.y; }
+					break;
+				case BOUNDARY_BOUNCE:
+					// Simple bounce: Virion bounces off in a random direction.
+				    if      (exceedxmin) { pos.x = w->bounding_min.x; angle = randf(0, M_PI); }
+				    else if (exceedxmax) { pos.x = w->bounding_max.x; angle = randf(-M_PI, 0); }
+				    else if (exceedymin) { pos.y = w->bounding_min.y; angle = randf(-M_PI/2.0, M_PI/2.0); }
+				    else if (exceedymax) { pos.y = w->bounding_max.y; angle = randf(M_PI/2.0,3*M_PI/2.0); if (angle>M_PI){angle=-2*M_PI+angle;} }
+					break;
+				case BOUNDARY_DIE:
+					active   = false;
+					drawable = false;
+					break;
+			}
 		}
+
+		// Kill the virion if it goes off the screen
+		//if ( pos.x < 0 || pos.x >= conf::WIDTH || pos.y < 0 || pos.y >= conf::HEIGHT ) {
+		//	active = false;
+		//}
 
 		// Also kill the virion if it goes out of the bounding box (probably won't infect any more cells)
 		// Check if we should draw this virion
-		if (pos.x < w->bounding_max.x && pos.x > w->bounding_min.x && pos.y < w->bounding_max.y && pos.y > w->bounding_min.y) {
-			active = true;
-			drawable = true;
-		} else {
-			active   = false;
-			drawable = false;
-		}
+		//if (pos.x < w->bounding_max.x && pos.x > w->bounding_min.x && pos.y < w->bounding_max.y && pos.y > w->bounding_min.y) {
+		//	active = true;
+		//	drawable = true;
+		//} else {
+		//	active   = false;
+		//	drawable = false;
+		//}
 	}
 }
 

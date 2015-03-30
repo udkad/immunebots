@@ -11,6 +11,7 @@
 #include <iostream>
 #include <unordered_map>
 #include "World.h"
+#include "AbstractAgent.h"
 
 using namespace std;
 
@@ -28,9 +29,12 @@ public:
 	int endTime;
 	string setupfilename;
 	string layoutfilename;
+	string reportfilename; // aka log file aka stats
+	string reportdir;
 
 	/* The setup functions */
 	void processSetupFile();
+	bool hasReachedEnd();
 	void setEndTime(const char*);
 
 	float getParm(std::string, float);
@@ -43,7 +47,11 @@ private:
 	World * world;
 
 	void setParm(std::string, std::string);
-	void handleCommands(std::string command, std::string value);
+
+	int getTimeInSeconds(const char*);
+
+	void handleCommands(std::string, std::string);
+	void handleEndCondition(std::string, std::string);
 
 	void placeNonsusceptibleCells();
 

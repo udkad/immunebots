@@ -33,6 +33,7 @@ protected:
 	bool active;
 	bool dead;
 	float lifespan;
+	int boundarycondition;
 
 public:
 
@@ -44,6 +45,13 @@ public:
     static const int AGENT_VIRION		  	= 5;
     static const int AGENT_INFECTED_NOVIRIONS = 6; // static cell which doesn't produce any virions
     static const int AGENT_DEADCELL			= 99;
+
+    // Boundary conditions
+    static const int BOUNDARY_NONE			= 0;
+    static const int BOUNDARY_WRAP			= 1;
+    static const int BOUNDARY_BOUNCE		= 2;
+    static const int BOUNDARY_STAY			= 3;
+    static const int BOUNDARY_DIE			= 4;
 
 	bool isActive() {return active;} // If T, remove from ActiveAgents queue
 	bool isDead()   {return dead;} // If T, remove from world

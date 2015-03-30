@@ -85,6 +85,7 @@ public:
     void placeCells();
     /* Place CTL at random inside the bounding box */
     void dropCTL();
+    void dropCTL(int);
 
     /* Save information to file */
     void saveLayout();

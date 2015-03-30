@@ -17,9 +17,9 @@
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/export.hpp>
 
-static int STATE_MOVE  = 0;
-static int STATE_SENSE = 1;
-static int STATE_KILL  = 2;
+static const int STATE_MOVE  = 0;
+static const int STATE_SENSE = 1;
+static const int STATE_KILL  = 2;
 
 class CTL: public AbstractAgent {
 
@@ -44,7 +44,7 @@ private:
 	float timer;
 
 	/* Helper functions */
-	float getPersistenceLength(); // returns a persistence length between (4.0,6.0)
+	float getPersistenceLength(World *); // returns a persistence length between (4.0,6.0)
 
 	// For serialisation:
     friend class boost::serialization::access;

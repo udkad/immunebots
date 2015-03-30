@@ -20,6 +20,8 @@ ImmunebotsSetup::ImmunebotsSetup() {
 	endTime = 7*(24*60*60); // End at day 7 (note: integer & in seconds!)
 	setupfilename  = string("");
 	layoutfilename = string("Setup-Grant.sav");
+	reportfilename = string("log_default");
+	reportdir      = ".";
 
 	// Create (and initialise with defaults) the parameters (all floats) for:
 	// - Virions:
@@ -44,6 +46,10 @@ ImmunebotsSetup::~ImmunebotsSetup() {
 
 // Setup files are processed here. A single setup file is specified on the commandline with "-s SETUPFILENAME".
 void ImmunebotsSetup::processSetupFile() {
+
+	// Return if no setup file was set
+	if ( setupfilename.empty() ) { return; }
+
 	ifstream sfile(setupfilename);
 
 	if (!sfile.good()) {
@@ -74,16 +80,28 @@ void ImmunebotsSetup::processSetupFile() {
 				// Do not over-write an id set by the command line
 				if ( id.empty() ) {
 					id = value;
-					cout << " -- Setting Run ID as '"<<value<<"' from setupfile"<< endl;
+					cout << "- Setting Run ID as '"<<value<<"' from setupfile"<< endl;
 				} else {
-					cout << " WARNING: Run ID ('"<<value<<"') found in setupfile, ignoring as already set as '"<<id<<"'.\n";
+					cout << "WARNING: Run ID ('"<<value<<"') found in setupfile, ignoring as already set as '"<<id<<"'.\n";
 				}
 			} else if (boost::iequals(keyword, "endtime")) {
 				setEndTime(value.c_str());
 			} else if (boost::iequals(keyword, "layoutfile")) {
 				layoutfilename = value;
+			} else if (boost::iequals(keyword, "reporttime")) {
+				setParm("report_time", getTimeInSeconds(value.c_str()));
+			} else if (boost::iequals(keyword, "reportname")) {
+				if (boost::iequals(value,"fromid")) {
+					reportfilename = id;
+				} else {
+					reportfilename = value;
+				}
+			} else if (boost::iequals(keyword, "reportdir")) {
+				reportdir = value;
+			} else if (boost::iequals(keyword, "reportoverwrite")) {
+				setParm("report_overwrite",atoi(value.c_str()));
 			} else if ( keyword.at(0) == '!' )  {
-				// Handle the commands
+				// Handle the commands (all start with '!', e.g. !PLACE)
 				handleCommands(keyword, value);
 			} else {
 				cout << "WARNING: Unrecognised line in setupfile (ignoring..): " << line << endl;
@@ -97,15 +115,21 @@ void ImmunebotsSetup::processSetupFile() {
 
 			boost::to_lower(pname);
 
-			// Handles Rates and Cell placement variables.
+			// Handles Rates, Times, End Conditions and Cell placement variables.
 			if (boost::iequals(keyword, "Rate")) {
 				setParm(pname, pval);
+			} else if (boost::iequals(keyword, "Time")) {
+				// Stick the rate/time on the parameters map
+				setParm(pname, getTimeInSeconds(pval.c_str()));
+			} else if (boost::iequals(keyword, "EndCondition")) {
+				// Set up the end conditions, eg. endtime, or when a cell-count reaches a certain %/number
+				handleEndCondition(pname, pval);
 			} else {
 				// Handle Nonsusceptible/Susceptible/Infected/CTL keywords
 				boost::to_lower(pname);
 
 				// Catch the "placement" pname first (value is not an integer - so handle special)
-				if ( boost::equals(pname,"placement") ) {
+				if ( boost::iequals(pname,"PLACEMENT") ) {
 					if (boost::iequals(keyword, "Nonsusceptible")) {
 						if ( boost::iequals(pval,"squaregrid") ) {
 							setParm( string("nc_").append(pval), 1 );
@@ -115,6 +139,42 @@ void ImmunebotsSetup::processSetupFile() {
 							setParm( string("sc_").append(pval), 1 );
 						}
 					} // else ignore
+				} else if ( boost::iequals(pname,"TYPE") ) {
+					// Handle the "type" pname (value is not an integer, so handle special)
+					if (boost::iequals(keyword, "Infected")) {
+						if ( boost::iequals(pval,"withvirions") || boost::iequals(pval,"virions") ) {
+							// Use the Novirions agent instead of the (default) Infected cell type
+							setParm( string("ic_novirions"), 0 );
+						} else if ( boost::iequals(pval,"novirions") ) {
+							// Use the Novirions agent instead of the (default) Infected cell type
+							setParm( string("ic_novirions"), 1 );
+						}
+					} // else ignore other 'type' variables
+				} else if ( boost::iequals(pname,"BOUNDARY") ) {
+					// Catch the Boundary behaviours: wrap, stay, bounce, torus.
+					int boundary;
+
+					if (boost::iequals(pval,"none")) {
+						boundary = AbstractAgent::BOUNDARY_NONE;
+					} else if (boost::iequals(pval,"wrap")) {
+						boundary = AbstractAgent::BOUNDARY_WRAP;
+					} else if (boost::iequals(pval,"bounce")) {
+						boundary = AbstractAgent::BOUNDARY_BOUNCE;
+					} else if (boost::iequals(pval,"stay")) {
+						boundary = AbstractAgent::BOUNDARY_STAY;
+					} else if (boost::iequals(pval,"die")) {
+						boundary = AbstractAgent::BOUNDARY_DIE;
+					}
+
+					if (boost::iequals(keyword, "Virion")) {
+						setParm("v_boundary", boundary);
+					} else if ( boost::iequals(keyword,"CTL") ) {
+						setParm("ctl_boundary", boundary);
+					} else {
+						cout << "WARNING: Unrecognised boundary condition in setupfile (ignoring..): " << line << endl;
+						return;
+					}
+
 				} else if (boost::iequals(keyword, "Nonsusceptible")) {
 					setParm( string("nc_").append(pname), pval );
 				} else if (boost::iequals(keyword, "Susceptible")) {
@@ -153,6 +213,7 @@ int ImmunebotsSetup::getParm(std::string parmName, int defaultParm) {
 }
 
 void ImmunebotsSetup::setParm(std::string parmName, float parmValue) {
+	cout << " - adding parameter "<< parmName <<" ("<< parmValue << ")" << endl;
 	parameters[parmName] = parmValue;
 }
 
@@ -164,8 +225,27 @@ void ImmunebotsSetup::setParm(std::string parmName, int parmValue) {
 // Setup file lines will always be converted into a float
 void ImmunebotsSetup::setParm(std::string pname, std::string pval) {
 	float pvalf = atof( pval.c_str() );
-	cout << " -- Found rate "<< pname <<" with value "<< pvalf << ".\n";
 	setParm( pname, pvalf );
+}
+
+// Check the EndCondition and stick on the map
+void ImmunebotsSetup::handleEndCondition(string key, string value) {
+	// Examples: endtime 7d; infectedpc 0.5.
+	if ( boost::iequals(key,"endtime") ) {
+		setEndTime(value.c_str());
+		cout << " - EndCondition of 'World time >= "<< endTime <<"s' set" << endl;
+	} else if ( boost::iequals(key,"infectedpc_eq") ) {
+		setParm("end_infectedpc_eq",1);
+		setParm("end_infectedpc_eqvalue", (float)atof(value.c_str()) );
+		cout << " - EndCondition of 'Infected == "<< getParm("end_infectedpc_eqvalue", 0.0f)*100 <<"%' set" << endl;
+	} else if ( boost::iequals(key,"infectedpc_ge") ) {
+		setParm("end_infectedpc_ge",1);
+		setParm("end_infectedpc_gevalue", (float)atof(value.c_str()) );
+		cout << " - EndCondition of 'Infected >= "<< getParm("end_infectedpc_gevalue", 0.0f)*100 <<"%' set" << endl;
+	} else {
+		cout << "WARNING: Could not parse the EndCondition: " << key <<":"<<value << endl;
+	}
+
 }
 
 void ImmunebotsSetup::handleCommands(std::string command, std::string value) {
@@ -174,20 +254,43 @@ void ImmunebotsSetup::handleCommands(std::string command, std::string value) {
 		// Can place: non-susceptible, infected, ctl
 		if (boost::iequals(value,"nonsusceptible")){
 			// Place non-susceptible (and by extension, susceptible cells) according to parms already set.
-			cout << "[Setup] Placing non-susceptible cells\n";
+			cout << " - Placing "<< getParm("nc_totalcount", 10000) <<" non-susceptible cells" << endl;
 			placeNonsusceptibleCells();
-			cout << "Now there are " << world->numCells() << " cells in the world\n";
 		} else if (boost::iequals(value,"infected")){
 			// Infect x susceptible cells
 			world->infectCells( getParm("ic_totalcount",1), true);
-			cout << "[Setup] Infecting one susceptible cell\n";
-			cout << "Now there are " << world->numAgents() << " agents in the world\n";
+			cout << " - Infecting "<<getParm("ic_totalcount",1)<<" susceptible cell(s)" << endl;
 		} else if (boost::iequals(value,"ctl")){
-			// TODO
+			world->dropCTL( getParm("ctl_totalcount",0) );
+			cout << " - Placing "<< getParm("ctl_totalcount",0) << " CTL" << endl;
+		}
+	}
+}
+
+// Check to see if we have reached the end conditions specified in the setup
+bool ImmunebotsSetup::hasReachedEnd() {
+
+	// Check endtime, then any other conditions
+	//bool hasEnded;
+	if ( endTime!=-1 && world->worldtime >= endTime ) {
+		cout << " - World time ("<<world->worldtime<<") is >= the required endTime of " << endTime << endl;
+		return(true);
+	} else {
+		float infected_pc = (world->stats->infected / (float)(world->stats->infected + world->stats->susceptible)) ;
+		if ( getParm("end_infectedpc_ge",0)==1 &&
+			infected_pc >= getParm("end_infectedpc_gevalue",2.0f) ) {
+			cout << " - End condition (Infected% >= "<<getParm("end_infectedpc_gevalue",2.0f)*100<<"%) has been reached" << endl;
+			return(true);
+		} else if ( getParm("end_infectedpc_eq",0)==1 &&
+			infected_pc <= getParm("end_infectedpc_eqvalue",0.0f) ) {
+			cout << " - End condition (Infected% == "<<getParm("end_infectedpc_eqvalue",0.0f)*100<<"%) has been reached" << endl;
+			return( true );
 		}
 	}
 
+	return(false);
 }
+
 
 // Will create a (square) grid of susceptible cells
 void ImmunebotsSetup::placeNonsusceptibleCells() {
@@ -212,30 +315,38 @@ void ImmunebotsSetup::placeNonsusceptibleCells() {
 }
 
 
-void ImmunebotsSetup::setEndTime(const char* et){
+void ImmunebotsSetup::setEndTime(const char* et) {
+	endTime = getTimeInSeconds(et);
+}
+
+int ImmunebotsSetup::getTimeInSeconds(const char* et) {
+
 	// End time can end with "s" (seconds) or "d" (days)
-	boost::regex re("(\\d+)(\\w)?", boost::regex::perl|boost::regex::icase);
+	boost::regex re("([-.\\d]+)(\\w)?", boost::regex::perl|boost::regex::icase);
 	boost::cmatch ma;
+
+	int tis = 0;
 
     if (boost::regex_match(et, ma, re)) {
     	char units = *ma[2].first; // OK as single character
     	int value = atoi(string(ma[1].first, ma[1].second).c_str()); // Convert string to integer
 
     	if (units == 'd') {
-    		endTime = value*24*60*60;
+    		tis = value*24*60*60;
     	} else if (units == 's') {
-    		endTime = value;
+    		tis = value;
+    	} else if (units == 'm') {
+    		tis = value*60;
     	} else if (units == 'w') {
-    		endTime = value*7*24*60*60;
+    		tis = value*7*24*60*60;
     	} else if (units == 'h') {
-    		endTime = value*60*60;
+    		tis = value*60*60;
     	} else {
-    		endTime = value; // Default: ignore units
+    		tis = value; // Default: ignore units
     	}
-
-    	cout << "End time set to: "<< endTime << "s\n";
     } else {
-    	cout << "WARNING: detected an end time (-e) option but could not parse it ("<<et<<")\n";
+    	cout << "WARNING: could not parse time ("<<et<<") into anything meaningful\n";
     }
 
+	return(tis);
 }

@@ -6,8 +6,12 @@
 // Description : Hello World in C++, Ansi-style
 //============================================================================
 
+/* These are the GL-related libraries */
+#ifndef IMMUNEBOTS_NOGL
 #include <GL/glew.h>
 #include <GL/glut.h>
+#include <AntTweakBar.h>
+#endif
 
 #include "GLView.h"
 #include "ImmunebotsSetup.h"
@@ -18,7 +22,6 @@
 #include <fstream>
 #include <string>
 #include <unistd.h> // for getopt
-#include <AntTweakBar.h>
 #include <ctime>
 #include <stdio.h>
 
@@ -30,7 +33,28 @@ void printHelp();
 
 int main(int argc, char **argv) {
 
+	float version = 1.0001;
+
+
+	cout <<"  _                                            _             _        " << endl;
+	cout <<" (_) _ __ ___   _ __ ___   _   _  _ __    ___ | |__    ___  | |_  ___ " << endl;
+	cout <<" | || '_ ` _ \\ | '_ ` _ \\ | | | || '_ \\  / _ \\| '_ \\  / _ \\ | __|/ __|" << endl;
+	cout <<" | || | | | | || | | | | || |_| || | | ||  __/| |_) || (_) || |_ \\__ \\" << endl;
+	cout <<" |_||_| |_| |_||_| |_| |_| \\__,_||_| |_| \\___||_.__/  \\___/  \\__||___/" << endl << endl;
+
+	cout << "      Version " << version <<
+			", adapted from Andrej Karpathy's Scriptbots" << endl <<
+			"        by Ulrich D Kadolsky (ulrich.kadolsky@einstein.yu.edu)" << endl << endl;
+
+#ifdef IMMUNEBOTS_NOGL
+	cout << "                      ~ without OpenGL flavour ~" << endl << endl;
+#endif
+#ifndef IMMUNEBOTS_NOGL
+	cout << "                        ~ with OpenGL flavour ~" << endl << endl;
+#endif
+
     srand(time(0));
+
     ImmunebotsSetup *is = new ImmunebotsSetup();
     World *world = new World();
 
@@ -43,31 +67,42 @@ int main(int argc, char **argv) {
     GLVIEW = new GLView(world, is);
     if (is->automaticRun) {
     	// Want to start the simulation immediately..
+#ifndef IMMUNEBOTS_NOGL
+    	// TODO: Is this still necessary?
     	if (is->useGlut) GLVIEW->switchToSimulationMode(true);
+#endif
     	GLVIEW->setPaused(false);
     }
-    cout << "Finished setting up config, the world and GLView\n";
 
-    cout << "Display the help, regardless of whether -h was set or not\n";
-    printHelp();
+    cout << "Finished setting up config, the world and GLView" << endl << endl;
 
     // Check if we're running in X (useGlut) or command-line mode (!useGlut)
     if (!is->useGlut) {
 		// Set drawing to false (although this is no longer necessary, as we check is->useGlut before trying to draw)
 		GLVIEW->toggleDrawing();
 		GLVIEW->checkSetup(); // If ok, will set dosimulation to TRUE
-		// Just repeatedly call handleIdle();
-    	while (1) {
+		cout << "Starting headless run:" << endl;
+
+		// Just repeatedly call handleIdle()
+    	while ( !GLVIEW->paused ) {
     		GLVIEW->handleIdle();
-    		// Will exit if no more agents or world end time is reached
     	}
+
+    	clock_t programtime;
+		programtime = clock() / CLOCKS_PER_SEC ;
+
+		cout << "Simulation complete. "<< GLVIEW->idlecalled <<" world ticks took "<<programtime<<"s realtime."<<endl;
+
+		exit(EXIT_SUCCESS);
+
     } else {
     	// Print out keys - only relevant if we have visualisation
     	printf("Setup Menu:\n r=reset view, Esc=quit\n");
-        printf("Simulation menu:\n p=pause, d=drawing on/off (for faster computation), +=faster, -=slower, -->=fast forward to next day\n");
+        printf("Simulation menu:\n p=pause, d=drawing on/off (for faster computation), +=faster, -=slower, -->=fast forward to next day\n\n");
     }
 
-    //GLUT SETUP
+/* GL-related functions */
+#ifndef IMMUNEBOTS_NOGL
     glutInit(&argc, argv); // GLUT will auto-recognise some arguments
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_ALPHA?
     glutInitWindowPosition(30,30);
@@ -103,22 +138,26 @@ int main(int argc, char **argv) {
     glutMainLoop();
 
     TwTerminate();
-    return 0;
+#endif // End of IMMUNEBOTS_NOGL
+
+    return(EXIT_SUCCESS);
+
 }
 
 // Parses the command line options using getopt and updates the ImmunebotsSetup
 void processArguments(int argc, char **argv, ImmunebotsSetup *is) {
 	int o;
-	string runid; // If there is a runid specified on the command line, then ensure that it overwrites the one in the config file
-	cout << "Processing arguments: " << argv << endl;
-	while ((o = getopt(argc, argv, "ade:?hs:")) != -1) {
+
+	cout << "Processing arguments: " << endl;
+
+	while ((o = getopt(argc, argv, "ade:?hc:s:i:")) != -1) {
 	        switch (o) {
 	        case 'a':	// Automatic run
-	        	cout << "Automatically start simulation and end program when complete.\n";
+	        	cout << " (a) Automatically start simulation and end program when complete.\n";
 	        	is->automaticRun=true;
 	        	break;
 	        case 'd':	// Disable draw
-	        	cout << "Disabling GLUT, autostart simulation and autoexit on completion.\n";
+	        	cout << " (d) Disabling GLUT, autostart simulation and autoexit on completion.\n";
 	        	is->useGlut=false;
 	        	is->automaticRun=true;
 	        	break;
@@ -128,32 +167,37 @@ void processArguments(int argc, char **argv, ImmunebotsSetup *is) {
 	        case 'h':	// Display help
 	        	printHelp(); exit(EXIT_SUCCESS);
 	        case 'i':	// Commandline RunID (override)
-	        	runid = optarg; break;
-	        case 's':	// Load setup file
+	        	is->id = optarg;
+	        	cout << " (i) Run ID set as '" << optarg << "' (from commandline)" << endl;
+	        	break;
+	        case 'c':	// Intentional fallthrough to config file
+	        case 's':	// Load config file
 	        	// Note: First check setup file exists
 	        	ifstream setupfn(optarg);
 	        	if (!setupfn.good()) {
-	        		cout << "WARNING: Could not find the setup file ('"<<optarg<<"')\n";
+	        		cout << "WARNING: Could not find the configuration file ('"<<optarg<<"')" << endl;
 	        	} else {
-	        		cout << "Setting setupfile as: '"<<optarg<<"'\n";
+	        		cout << " (c) Setting setupfile as: '"<<optarg<<"'\n";
 		        	is->setupfilename = string(optarg);
-		        	is->processSetupFile();
 	        	}
 	        	break;
 			}
 	}
-	// If a run id was specified on the command line, ensure it overwrites the one in the config file
-    if ( !runid.empty() ) is->id = runid;
 
-    cout << ".. done processing arguments.\n";
+	cout << "Finished processing arguments." << endl << endl << "Processing configuration: " << endl;
+
+	// Process the setup file at this point
+	is->processSetupFile();
+
+	cout << "Finished processing configuration." << endl << endl;
 }
 
 void printHelp() {
-	cout << "Immunebots Version 1.0001\n";
-	cout << "	-a\t\tAutomate simulation start and exit program when done\n";
-	cout << "   -d\t\tTurn draw off (implies -a, require -s)\n";
-	cout << "   -e <time>\tRun simulation until <time>, e.g. '84600s' or '7d'\n";
-	cout << "   -h\t\tDisplay help (this screen)\n";
-	cout << "   -i <run id>\tSet run ID (overrides config file run ID)\n";
-	cout << "   -s <config>\tLoad the specified settings file\n";
+	cout << " Displaying command line options:" << endl;
+	cout << "   -a\t\tAutomate simulation start and exit program when done" << endl;
+	cout << "   -d\t\tTurn draw off (implies -a, require -s)" << endl;
+	cout << "   -e <time>\tRun simulation until <time>, e.g. '84600s' or '7d'" << endl;
+	cout << "   -h\t\tDisplay help (this screen)" << endl;
+	cout << "   -i <run id>\tSet run ID (overrides config file run ID)" << endl;
+	cout << "   -c <config>\tLoad the specified configuration file" << endl;
 }

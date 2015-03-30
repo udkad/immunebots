@@ -1,16 +1,17 @@
+#include "GLView.h"
 
+#ifndef IMMUNEBOTS_NOGL
+#include <GL/glu.h>
+#include <GL/glut.h>
 #include <AntTweakBar.h>
+#endif
 
 #include <ctime>
 #include <stdio.h>
 #include <string>
 
-#include <GL/glu.h>
-#include <GL/glut.h>
-
 #include "settings.h"
 #include "vmath.h"
-#include "GLView.h"
 #include "ImmunebotsSetup.h"
 #include "config.h"
 #include "World.h"
@@ -27,6 +28,7 @@
 using namespace std;
 
 /* GL handler functions */
+#ifndef IMMUNEBOTS_NOGL
 void gl_processNormalKeys(unsigned char key, int x, int y) {
     GLVIEW->processNormalKeys(key, x, y);
 }
@@ -59,7 +61,11 @@ void gl_renderScene() {
     GLVIEW->renderScene();
 }
 
+#endif
+
 /* More GL functions */
+
+#ifndef IMMUNEBOTS_NOGL
 
 void GLView::RenderString(float x, float y, void *font, const char* string, float r, float g, float b) {
     glColor4f(r,g,b,1.0);
@@ -101,8 +107,12 @@ void GLView::drawCircle(float x, float y, float z, float r, bool draw_outline) {
     }
     glPopMatrix();
 }
+#endif
+
 
 /* TW Menu functions */
+
+#ifndef IMMUNEBOTS_NOGL
 
 // TW Callback function to reset the world
 void TW_CALL ResetWorld( void * world ) {
@@ -184,7 +194,6 @@ void TW_CALL SwitchToSetupMode( void * w ) {
 void TW_CALL PauseContinueSimulation(void *) {
 	GLVIEW->togglePaused();
 }
-
 
 /*
  * MOUSE TW_CALLS - check if still relevant *
@@ -387,6 +396,8 @@ void GLView::createStatsMenu(bool visible) {
 	}
 }
 
+#endif
+
 /* Create the world */
 
 GLView::GLView(World *w, ImmunebotsSetup *is):
@@ -430,6 +441,8 @@ GLView::~GLView() {
 
 }
 
+#ifndef IMMUNEBOTS_NOGL
+
 // Switch over to Simulation mode if dosim (always pause)
 void GLView::switchToSimulationMode(bool dosim) {
 	dosimulation = dosim;
@@ -461,23 +474,6 @@ void GLView::changeSize(int w, int h) {
 	// Inform Menubar (system) of the new window coordinates
     TwWindowSize(w, h);
 }
-
-// class UnderMousePredicate {
-//     UnderMousePredicate(int x, int y) : X(x), Y(y) {}
-//
-//     bool operator()(Agent a) {
-//         float mind=1e10;
-//         float d;
-//         d= pow(X-a.pos.x,2)+pow(Y-a.pos.y,2);
-//         if (d<mind) {
-//             mind=d;
-//             return true;
-//         }
-//     }
-//     int X;
-//     int Y;
-// };
-
 
 /* Given a mouse cursor location ("WindowSpace"), translates into where in the model the mouse cursor is pointing ("WorldSpace") */
 void GLView::getMouseWorldCoords(int x, int y, int z, GLdouble* ws) {
@@ -706,6 +702,7 @@ void GLView::processSpecialKeys(int key, int x, int y) {
 	}
 
 }
+#endif
 
 // This is called repeatedly by GLUT (if visualisation is enabled) or by the "game loop"
 // The first time handleIdle is called, we execute the function "automaticEventSetup()"
@@ -720,13 +717,13 @@ void GLView::handleIdle() {
 	if (!processsetupevents) automaticEventSetup();
 
     // Check if we have reached the end of the simulation
-	if ( dosimulation && !paused && world->getWorldTime() >= ibs->endTime ) {
-		cout << "Have reached the required world time of " << world->getWorldTime() << "s, ";
+	if ( dosimulation && !paused && ibs->hasReachedEnd() ) { //world->getWorldTime() >= ibs->endTime ) {
+		cout << " - Simulation has been paused or has reached an end condition, ";
 		if (ibs->automaticRun) {
-			cout << "exiting program.\n";
-			exit(EXIT_SUCCESS);
+			cout << "exiting program." << endl;
+			paused = true; //returns control to the headless loop in GLVIEW
 		} else {
-    		cout << "pausing simulation.\n";
+    		cout << "pausing simulation." << endl;
     		paused = true;
     		draw = true;
     	}
@@ -746,21 +743,21 @@ void GLView::handleIdle() {
     	}
     }
 
-    modcounter++;
     idlecalled++;
 
+    // Reset modcounter
     if (modcounter>=10000) {
         modcounter=0;
     }
 
-	// Update stats and write-out report every 1000 timesteps (==1000 seconds)
-	if (modcounter%60==0) {
+	// Update stats and write-out report every 300 timesteps (i.e. every 5 minutes)
+	if (modcounter%ibs->getParm("report_time",300)==0) {
 		world->updateStats(false);
 	}
 
     // Only update the world is we're in simulation mode and the simulation isn't paused.
     if (dosimulation && !paused && (!stepmode || doanotherstep)) {
-    	world->update(modcounter%60==0);
+    	world->update(modcounter%ibs->getParm("report_time",300)==0);
     	if (stepmode) {
     		doanotherstep = false;
     	}
@@ -774,6 +771,7 @@ void GLView::handleIdle() {
     }
 
     // Only do the following if we can draw
+#ifndef IMMUNEBOTS_NOGL
     if ( ibs->useGlut ) {
     	//show FPS
     	int currentTime = glutGet( GLUT_ELAPSED_TIME );
@@ -805,7 +803,9 @@ void GLView::handleIdle() {
 			}
 		}
     } // End of HAVE_GLUT
+#endif
 
+    modcounter++;
 }
 
 
@@ -842,10 +842,11 @@ void GLView::automaticEventSetup() {
 
 	// Always do this
 	processsetupevents = true;
-	cout << "[GLView] Automatic Events Completed.\n";
+	//cout << "[GLView] Automatic Events Completed.\n";
 
 }
 
+#ifndef IMMUNEBOTS_NOGL
 void GLView::renderScene() {
 
 	frames++;
@@ -889,186 +890,19 @@ void GLView::renderScene() {
     	glutPostRedisplay(); // Uncommenting this limits the FPS and CPS to 60.
     }
 }
+#endif
 
+#ifndef IMMUNEBOTS_NOGL
 void GLView::drawAgent(AbstractAgent* a) {
 	// This just calls the agent's draw function
 	a->drawAgent(this);
 }
+#endif
 
-/* Scriptbots code: DEPRECATED
-void GLView::drawAgent(const Agent& agent) {
-    float n;
-    float r = conf::BOTRADIUS;
-    float rp = conf::BOTRADIUS+2;
-
-    //handle selected agent
-    if (agent.selectflag>0) {
-
-        //draw selection
-        glBegin(GL_POLYGON);
-        glColor3f(1,1,0);
-        drawCircle(agent.pos.x, agent.pos.y, conf::BOTRADIUS+5);
-        glEnd();
-
-        glPushMatrix();
-        glTranslatef(agent.pos.x-80,agent.pos.y+20,0);
-
-        //draw inputs, outputs
-        float col;
-        float yy=15;
-        float xx=15;
-        float ss=16;
-        glBegin(GL_QUADS);
-        for (int j=0;j<INPUTSIZE;j++) {
-            col= agent.in[j];
-            glColor3f(col,col,col);
-            glVertex3f(0+ss*j, 0, 0.0f);
-            glVertex3f(xx+ss*j, 0, 0.0f);
-            glVertex3f(xx+ss*j, yy, 0.0f);
-            glVertex3f(0+ss*j, yy, 0.0f);
-        }
-        yy+=5;
-        for (int j=0;j<OUTPUTSIZE;j++) {
-            col= agent.out[j];
-            glColor3f(col,col,col);
-            glVertex3f(0+ss*j, yy, 0.0f);
-            glVertex3f(xx+ss*j, yy, 0.0f);
-            glVertex3f(xx+ss*j, yy+ss, 0.0f);
-            glVertex3f(0+ss*j, yy+ss, 0.0f);
-        }
-        yy+=ss*2;
-
-        //draw brain. Eventually move this to brain class?
-        float offx=0;
-        ss=8;
-        for (int j=0;j<BRAINSIZE;j++) {
-            col= agent.brain.boxes[j].out;
-            glColor3f(col,col,col);
-            glVertex3f(offx+0+ss*j, yy, 0.0f);
-            glVertex3f(offx+xx+ss*j, yy, 0.0f);
-            glVertex3f(offx+xx+ss*j, yy+ss, 0.0f);
-            glVertex3f(offx+ss*j, yy+ss, 0.0f);
-            if ((j+1)%30==0) {
-                yy+=ss;
-                offx-=ss*30;
-            }
-        }
-
-        glEnd();
-        glPopMatrix();
-    }
-
-
-    // Fix event drawing
-    //draw indicator of this agent... used for various events
-//     if (agent.indicator>0) {
-//         glBegin(GL_POLYGON);
-//         glColor3f(agent.ir,agent.ig,agent.ib);
-//         drawCircle(agent.pos.x, agent.pos.y, conf::BOTRADIUS+((int)agent.indicator));
-//         glEnd();
-//         agent.indicator-=1;
-//     }
-
-    //viewcone of this agent
-    glBegin(GL_LINES);
-    //and view cones
-    glColor3f(0.5,0.5,0.5);
-    for (int j=-2;j<3;j++) {
-        if (j==0)continue;
-        glVertex3f(agent.pos.x,agent.pos.y,0);
-        glVertex3f(agent.pos.x+(conf::BOTRADIUS*4)*cos(agent.angle+j*M_PI/8),agent.pos.y+(conf::BOTRADIUS*4)*sin(agent.angle+j*M_PI/8),0);
-    }
-    //and eye to the back
-    glVertex3f(agent.pos.x,agent.pos.y,0);
-    glVertex3f(agent.pos.x+(conf::BOTRADIUS*1.5)*cos(agent.angle+M_PI+3*M_PI/16),agent.pos.y+(conf::BOTRADIUS*1.5)*sin(agent.angle+M_PI+3*M_PI/16),0);
-    glVertex3f(agent.pos.x,agent.pos.y,0);
-    glVertex3f(agent.pos.x+(conf::BOTRADIUS*1.5)*cos(agent.angle+M_PI-3*M_PI/16),agent.pos.y+(conf::BOTRADIUS*1.5)*sin(agent.angle+M_PI-3*M_PI/16),0);
-    glEnd();
-
-    glBegin(GL_POLYGON); //body
-    glColor3f(agent.red,agent.gre,agent.blu);
-    drawCircle(agent.pos.x, agent.pos.y, conf::BOTRADIUS);
-    glEnd();
-
-    glBegin(GL_LINES);
-    //outline
-    if (agent.boost) glColor3f(0.8,0,0); //draw boost as green outline
-    else glColor3f(0,0,0);
-
-    for (int k=0;k<17;k++)
-    {
-        n = k*(M_PI/8);
-        glVertex3f(agent.pos.x+r*sin(n),agent.pos.y+r*cos(n),0);
-        n = (k+1)*(M_PI/8);
-        glVertex3f(agent.pos.x+r*sin(n),agent.pos.y+r*cos(n),0);
-    }
-    //and spike
-    glColor3f(0.5,0,0);
-    glVertex3f(agent.pos.x,agent.pos.y,0);
-    glVertex3f(agent.pos.x+(3*r*agent.spikeLength)*cos(agent.angle),agent.pos.y+(3*r*agent.spikeLength)*sin(agent.angle),0);
-    glEnd();
-
-    //and health
-    int xo=18;
-    int yo=-15;
-    glBegin(GL_QUADS);
-    //black background
-    glColor3f(0,0,0);
-    glVertex3f(agent.pos.x+xo,agent.pos.y+yo,0);
-    glVertex3f(agent.pos.x+xo+5,agent.pos.y+yo,0);
-    glVertex3f(agent.pos.x+xo+5,agent.pos.y+yo+40,0);
-    glVertex3f(agent.pos.x+xo,agent.pos.y+yo+40,0);
-
-    //health
-    glColor3f(0,0.8,0);
-    glVertex3f(agent.pos.x+xo,agent.pos.y+yo+20*(2-agent.health),0);
-    glVertex3f(agent.pos.x+xo+5,agent.pos.y+yo+20*(2-agent.health),0);
-    glVertex3f(agent.pos.x+xo+5,agent.pos.y+yo+40,0);
-    glVertex3f(agent.pos.x+xo,agent.pos.y+yo+40,0);
-
-    //if this is a hybrid, we want to put a marker down
-    if (agent.hybrid) {
-        glColor3f(0,0,0.8);
-        glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo,0);
-        glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo,0);
-        glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo+10,0);
-        glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo+10,0);
-    }
-
-    glColor3f(1-agent.herbivore,agent.herbivore,0);
-    glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo+12,0);
-    glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo+12,0);
-    glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo+22,0);
-    glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo+22,0);
-
-    //how much sound is this bot making?
-    glColor3f(agent.soundmul,agent.soundmul,agent.soundmul);
-    glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo+24,0);
-    glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo+24,0);
-    glVertex3f(agent.pos.x+xo+12,agent.pos.y+yo+34,0);
-    glVertex3f(agent.pos.x+xo+6,agent.pos.y+yo+34,0);
-
-    glEnd();
-
-    //print stats
-    //generation count
-    sprintf(buf2, "%i", agent.gencount);
-    RenderString(agent.pos.x-conf::BOTRADIUS*1.5, agent.pos.y+conf::BOTRADIUS*1.8, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
-    //age
-    sprintf(buf2, "%i", agent.age);
-    RenderString(agent.pos.x-conf::BOTRADIUS*1.5, agent.pos.y+conf::BOTRADIUS*1.8+12, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
-
-    //health
-    sprintf(buf2, "%.2f", agent.health);
-    RenderString(agent.pos.x-conf::BOTRADIUS*1.5, agent.pos.y+conf::BOTRADIUS*1.8+24, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
-
-    //repcounter
-    sprintf(buf2, "%.2f", agent.repcounter);
-    RenderString(agent.pos.x-conf::BOTRADIUS*1.5, agent.pos.y+conf::BOTRADIUS*1.8+36, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
-}
-*/
-
+// Allow this to be defined, but as an empty function
+#ifndef IMMUNEBOTS_NOGL
 void GLView::drawCell(Cell *cell) {
+
 	// Useful variables
 	float r = cell->radius;
 
@@ -1102,7 +936,9 @@ void GLView::drawCell(Cell *cell) {
 
     glPopMatrix();
 }
+#endif
 
+#ifndef IMMUNEBOTS_NOGL
 void GLView::drawProgressBar(float completed) {
 
 	int halfW = conf::WIDTH/2;
@@ -1156,6 +992,7 @@ void GLView::drawProgressBar(float completed) {
     glPopMatrix();
 
 }
+#endif
 
 void GLView::toggleDrawing() {
 	draw = !draw;
@@ -1203,6 +1040,7 @@ void GLView::checkSetup() {
 	exit(EXIT_FAILURE);
 }
 
+#ifndef IMMUNEBOTS_NOGL
 void GLView::drawDot(int x, int y, float z) {
 	// Draw a dot! Used for patches (and virions)
     glBegin(GL_POINTS);
@@ -1210,6 +1048,7 @@ void GLView::drawDot(int x, int y, float z) {
 	glVertex3f(x,y,z);
     glEnd();
 }
+#endif
 
 void GLView::setWorld(World* w) {
     world = w;
@@ -1222,6 +1061,7 @@ void GLView::setCamera(float tx, float ty, float z) {
 }
 
 // Setup the simple cell vertex list
+#ifndef IMMUNEBOTS_NOGL
 void GLView::setupDisplayLists() {
 	if (conf::USE_VERTEX_ARRAY) {
 
@@ -1252,6 +1092,7 @@ void GLView::setupDisplayLists() {
     	glEndList();
 	}
 }
+#endif
 
 
 

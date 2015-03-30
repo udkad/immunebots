@@ -29,6 +29,7 @@ void CTL::init(ImmunebotsSetup * ibs) {
     speed = ibs->getParm("r_ctlspeed",1.0f);
     radius = conf::BOTRADIUS;
     agent_type = AbstractAgent::AGENT_CTL;
+    boundarycondition = ibs->getParm("ctl_boundary", BOUNDARY_BOUNCE);
 
     currentCell = 0;
     lastCell = 0;
@@ -53,6 +54,8 @@ CTL::~CTL() {
 // Draw the CTL
 void CTL::drawAgent(GLView * v) {
 
+#ifndef IMMUNEBOTS_NOGL
+
 	if (!drawable) return;
 
 	// 1. Draw the body (simple circle)
@@ -69,7 +72,10 @@ void CTL::drawAgent(GLView * v) {
 			v->RenderString(pos.x, pos.y, GLUT_BITMAP_TIMES_ROMAN_10, buf, 0.0f, 0.0f, 1.0f);
 		}
      */
+
+#endif
 }
+
 
 // CTL take input: check if they are on a cell (which may be infected)
 void CTL::setInput(float dt, World * w) {
@@ -78,10 +84,6 @@ void CTL::setInput(float dt, World * w) {
 	// Is the CTL over a cell?
 	if ( w->isOverCell(pos.x, pos.y) ) {
 		currentCell = w->getCell(pos.x, pos.y);
-		if (false && !currentCell->isDead()) {
-			currentCell->setKilled();
-			cout << "[CTL] fake-killing cell["<<currentCell<<"]\n";
-		}
 	}
 
 	if ( currentCell == 0 && state != STATE_MOVE ) {
@@ -95,7 +97,7 @@ void CTL::setInput(float dt, World * w) {
 		// If we're over a new cell, then "sense" it
 		if (currentCell!=0 && currentCell!=lastCell) {
 			state = STATE_SENSE;
-			timer = randf(25,60); // 25s-60s for sensing this cell
+			timer = w->ibs->getParm("t_ctlscantime",25.0f); // 25s-60s for sensing this cell
 		}
 
 	} else if ( state == STATE_SENSE ) {
@@ -109,11 +111,11 @@ void CTL::setInput(float dt, World * w) {
 			if (currentCell!=0 && currentCell->isInfected()) {
 				// Start killing the cell
 				state = STATE_KILL;
-				timer = (30.0 + randf(-5,5))*60; // Killing takes about 30 mins (*60=s)
+				timer = (w->ibs->getParm("t_ctlhandle",30.0f) + randf(w->ibs->getParm("t_ctlhandle_minus",50-.0f),w->ibs->getParm("t_ctlhandle_plus",5.0f)))*60; // Killing takes about 30 mins (*60=s)
 			} else {
 				state = STATE_MOVE;
 				angle = randf(-M_PI,M_PI);
-				timer = getPersistenceLength();
+				timer = getPersistenceLength(w);
 				lastCell = currentCell;
 				currentCell = 0;
 			}
@@ -135,7 +137,7 @@ void CTL::setInput(float dt, World * w) {
 			//cout << this << " CTL has killed cell ("<< currentCell << "); moving on\n";
 			state = STATE_MOVE;
 			angle = randf(-M_PI,M_PI);
-			timer = getPersistenceLength();
+			timer = getPersistenceLength(w);
 			lastCell = currentCell;
 			currentCell = 0;
 		}
@@ -143,9 +145,9 @@ void CTL::setInput(float dt, World * w) {
 
 }
 
-float CTL::getPersistenceLength() {
+float CTL::getPersistenceLength(World *w) {
 	// TODO: Allow persistence lengths of 0 (i.e. immediate angle rotations)
-	return (radius*5.0 + randf(-1.0,1.0));
+	return (radius*w->ibs->getParm("r_ctlpersist", 5.0f) + randf(-1.0,1.0));
 }
 
 // CTL can do the following actions: sense cell (25s-1min), kill cell (30m), move.
@@ -159,32 +161,50 @@ void CTL::doOutput(float dt, World *w) {
 		// Reset the angle once we reach the end of our persistence length
 		if ( timer <= 0 ) {
 			angle += randf(0.0, M_PI)-M_PI/2.0;
-			timer = getPersistenceLength();
+			timer = getPersistenceLength(w);
 		}
 
-		// TODO: Change this (make it switchable: deactivate, bound, wrap)
+		// Boundary conditions iff we're at a boundary
+		bool exceedxmin = (pos.x < w->bounding_min.x);
+		bool exceedxmax = (pos.x > w->bounding_max.x);
+		bool exceedymin = (pos.y < w->bounding_min.y);
+		bool exceedymax = (pos.y > w->bounding_max.y);
 
-		// OFFSCREEN 1: Torus wrap the edge of the world
-		/* INCORRECT: Needs to check if within bounding bound, not 0-1800 and 0-1000
-	    if (pos.x<0) 		pos.x=1800+pos.x;
-	    if (pos.x>=1800) 	pos.x=pos.x-1800;
-	    if (pos.y<0) 		pos.y=1000+pos.y;
-	    if (pos.y>=1000)	pos.y=pos.y-1000;
-	    */
-
-	    // OFFSCREEN 2: Bounce off the boundary box (default behaviour)
-	    if      (pos.x>w->bounding_max.x) { pos.x=w->bounding_max.x; angle += M_PI; }
-	    else if (pos.x<w->bounding_min.x) { pos.x=w->bounding_min.x; angle += M_PI; }
-	    if      (pos.y>w->bounding_max.y) { pos.y=w->bounding_max.y; angle += M_PI; }
-	    else if (pos.y<w->bounding_min.y) {	pos.y=w->bounding_min.y; angle += M_PI; }
+		if ( exceedxmin || exceedxmax || exceedymin || exceedymax ) {
+			switch (boundarycondition) {
+				case BOUNDARY_WRAP:
+				    if      (exceedxmin) { pos.x = w->bounding_max.x; }
+				    else if (exceedxmax) { pos.x = w->bounding_min.x; }
+				    if      (exceedymin) { pos.y = w->bounding_max.y; }
+				    else if (exceedymax) { pos.y = w->bounding_min.y; }
+					break;
+				case BOUNDARY_STAY:
+				    if      (exceedxmin) { pos.x = w->bounding_min.x; }
+				    else if (exceedxmax) { pos.x = w->bounding_max.x; }
+				    if      (exceedymin) { pos.y = w->bounding_min.y; }
+				    else if (exceedymax) { pos.y = w->bounding_max.y; }
+					break;
+				case BOUNDARY_BOUNCE:
+					// Simple bounce: Virion bounces off in a random direction.
+				    if      (exceedxmin) { pos.x = w->bounding_min.x; angle = randf(0, M_PI); }
+				    else if (exceedxmax) { pos.x = w->bounding_max.x; angle = randf(-M_PI, 0); }
+				    else if (exceedymin) { pos.y = w->bounding_min.y; angle = randf(-M_PI/2.0, M_PI/2.0); }
+				    else if (exceedymax) { pos.y = w->bounding_max.y; angle = randf(M_PI/2.0,3*M_PI/2.0); if (angle>M_PI){angle=-2*M_PI+angle;} }
+					break;
+				case BOUNDARY_DIE:
+					active   = false;
+					drawable = false;
+					break;
+			}
+		}
 
 		// OFFSCREEN 3: Kill the CTL if it leaves the matrix (really? why?)
-		if ( pos.x < 0 || pos.x >= conf::WIDTH || pos.y < 0 || pos.y >= conf::HEIGHT ) {
-			active = false;
-		}
+		//if ( pos.x < 0 || pos.x >= conf::WIDTH || pos.y < 0 || pos.y >= conf::HEIGHT ) {
+		//	active = false;
+		//}
 
 		// Check if we should draw this CTL cell
-		drawable = true;//(pos.x < w->bounding_max.x && pos.x > w->bounding_min.x && pos.y < w->bounding_max.y && pos.y > w->bounding_min.y);
+		//drawable = true;//(pos.x < w->bounding_max.x && pos.x > w->bounding_min.x && pos.y < w->bounding_max.y && pos.y > w->bounding_min.y);
 	} // else: does nothing (sits on cell)
 
 }

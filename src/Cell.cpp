@@ -93,7 +93,10 @@ void Cell::doOutput(float dt, World *w) {
 			setKilled();
 			// Notify the world event reporter of this virus-induced death
 			w->EventReporter(World::EVENT_INFECTEDDEATH_VIRUS);
-		} // else pick a susceptible cell at random and infect!
+		} else if ( randf(0,1) <= w->ibs->getParm("r_vinfect",0.00005f)*dt ) { // else pick a susceptible cell at random and infect!
+			// pick a susceptible cell at random and infected as AGENT_INFECTED_NOVIRIONS
+			w->infectCells(1, true);
+		}
 	}
 
 }
@@ -125,7 +128,7 @@ void Cell::setSusceptible(float sp) {
 }
 
 bool Cell::isInfected() {
-	return (agent_type == AGENT_INFECTED);
+	return (agent_type == AGENT_INFECTED || agent_type == AGENT_INFECTED_NOVIRIONS);
 }
 
 bool Cell::isSusceptible() {

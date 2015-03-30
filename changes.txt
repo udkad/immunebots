@@ -1,5 +1,10 @@
 == Changelog
 
+Version 1.0001c
+Backup date: 2011-09-20
+Removed the Agent class and DWAGEON brain (unused anyway). Made headless compile (IMMUNEBOTS_NOGL preprocessor directive). Allow different types of boundary behavious (wrap, bounce, etc).
+Allow "mass action" infection of susceptible cells (i.e. pick a cell at random to infect). Added Events to the setup file (i.e. when infected cells reach 1000, then add 50 CTL at random locations to the grid). Added simulation end conditions to the setup file, e.g. no infected cells left, or when infected cells reach a certain threshold. Moved drawing code from main loop (in GLView) to classes (Cell, CTl, Virion). More informative information on start up.
+
 Version 1.0001b
 Backup date: 2011-09-09
 Cells have states now; setup object passed to every agent; add a 'stats' menu in the GUI; more robust and extensive initialisation from setup files and default rates in the code; better cell placement on the 2D grid and improved (non-)susceptibility code for targets; lots of supporting stats code added.
