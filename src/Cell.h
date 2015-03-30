@@ -18,6 +18,7 @@
 
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
+#include <boost/serialization/export.hpp>
 
 class GLView;
 
@@ -36,7 +37,6 @@ public:
 	string getAgentType() { return string("Cell"); }
 
     // Variables to define the cell
-    int id; // TODO: remove?
     float radius;
 	int cType; 	// This is one of the CELL_ types (should enumerate?)
 
@@ -51,12 +51,13 @@ public:
 	bool isSusceptible();
 
     // Keep a record of where we're trying to get to
-    Vector2f nearestPatch;
-    void setClosestPatch(int * patch);
-    void checkClosestPatch(int x, int y);
-    void chooseRandomPatch( const std::vector<int> patchVector );
-    void setNewPatch(int x, int y, int patchNum);
+    //Vector2f nearestPatch;
+    //void setClosestPatch(int * patch);
+    //void checkClosestPatch(int x, int y);
+    //void chooseRandomPatch( const std::vector<int> patchVector );
+    //void setNewPatch(int x, int y, int patchNum);
 
+    // Allowed values for cType:
     static const int CELL_NOT_SUSCEPTIBLE = 0;
     static const int CELL_SUSCEPTIBLE     = 1;
     static const int CELL_INFECTED		  = 2;
@@ -74,14 +75,19 @@ private:
     friend class boost::serialization::access;
     template<class Archive>
     void serialize(Archive & ar, const unsigned int version) {
-        ar & pos;
+    	ar & boost::serialization::base_object<AbstractAgent>(*this);
+
+    	ar & pos;
         ar & angle;
         ar & speed;
-        ar & id;
         ar & radius;
-        ar & cType;
         ar & active;
+        ar & drawable;
+        ar & lifespan;
+
+        ar & cType;
     }
+
 
 };
 

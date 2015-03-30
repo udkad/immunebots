@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string>
 
+#include <GL/glu.h>
 #include <GL/glut.h>
 
 #include "settings.h"
@@ -16,6 +17,8 @@
 #include "AbstractAgent.h"
 #include "Cell.h"
 #include "CTL.h"
+
+#include <vector>
 
 /*Test libraries*/
 #include <fstream>
@@ -77,7 +80,7 @@ void TW_CALL ResetWorld( void * world ) {
 	// This will reset the world by clearing the patch layer, the cells and the CTL.
 	// Should also reset the time.
 	printf("DEBUG: Resetting World\n");
-	//((World *)world)->reset(); // Crashes program!! Try again, should work now
+	((World *)world)->reset(); // Crashes program!! Try again, should work now
 }
 
 void TW_CALL AddCells( void * world ) {
@@ -94,14 +97,21 @@ void TW_CALL ClearAllCells( void * world ) {
 }
 
 void TW_CALL PlaceCellsOnPatches( void * world ) {
+	// TODO: See notes for LoadLayout
 	((World*)world)->placeCells();
 }
 
 void TW_CALL SaveLayout( void * world ) {
+	// TODO: See notes for LoadLayout
 	((World*)world)->saveLayout();
 }
 
 void TW_CALL LoadLayout( void * world ) {
+	// TODO: Can we add a "loading" screen here?
+	// Note: May have to 'queue' the loadLayout function, i.e. set a bool which:
+	// - shows a loading screen
+	// - calls loadLayout()
+	// - removes the loading screen
 	((World*)world)->loadLayout();
 }
 
@@ -139,20 +149,21 @@ void TW_CALL GetMouseState(void * value, GLView * view, int ThisMouseState) {
 	// Write true/false in the supplied value if view->getMouseState == ThisMouseState
 	*(bool *)value = (view->getMouseState() == ThisMouseState);
 }
-
 void TW_CALL GetMouseStateDrawPatch(void *value, void *v) {
 	// This just casts the void pointers (if required) and sets the right MouseState to compare to.
 	GetMouseState(value, (GLView *)v, MOUSESTATE_DRAW_PATCH);
 }
-
 void TW_CALL GetMouseStatePlaceCell(void *value, void *v) {
 	// This just casts the void pointers (if required) and sets the right MouseState to compare to.
 	GetMouseState(value, (GLView *)v, MOUSESTATE_PLACE_CELL);
 }
-
 void TW_CALL GetMouseStateInfectCell(void *value, void *v) {
 	// This just casts the void pointers (if required) and sets the right MouseState to compare to.
 	GetMouseState(value, (GLView *)v, MOUSESTATE_INFECT_CELL);
+}
+void TW_CALL GetMouseStatePlaceCTL(void *value, void *v) {
+	// This just casts the void pointers (if required) and sets the right MouseState to compare to.
+	GetMouseState(value, (GLView *)v, MOUSESTATE_PLACE_CTL);
 }
 
 // Function to set the new mouseState when the user toggles something
@@ -176,7 +187,10 @@ void TW_CALL SetMouseStateInfectCell(const void *v, void *view) {
 	// Cast bool and view, adding the required mouseState if v
 	SetMouseState( *(const bool *)v, (GLView *)(view), MOUSESTATE_INFECT_CELL);
 }
-
+void TW_CALL SetMouseStatePlaceCTL(const void *v, void *view) {
+	// Cast bool and view, adding the required mouseState if v
+	SetMouseState( *(const bool *)v, (GLView *)(view), MOUSESTATE_PLACE_CTL);
+}
 void TW_CALL CopyStdStringToClient(std::string& destinationClientString, const std::string& sourceLibraryString) {
   // Copy the content of souceString handled by the AntTweakBar library to destinationClientString handled by your application
   destinationClientString = sourceLibraryString;
@@ -187,7 +201,7 @@ void GLView::createSetupMenu(bool visible) {
 
 	TwBar* bar = TwNewBar("Setup");
 
-	TwDefine("Setup color='0 0 0' alpha=128 position='10 10' size='240 550'");
+	TwDefine("Setup color='0 0 0' alpha=128 position='10 10' size='300 500'");
 	TwDefine("Setup fontresizable=false resizable=true");
 
 	TwAddVarRO(bar, "MouseState", TW_TYPE_INT32, (&mouseState), " label='Mouse state' " );
@@ -217,11 +231,15 @@ void GLView::createSetupMenu(bool visible) {
 	TwAddVarCB(bar, "ic_switch", TW_TYPE_BOOLCPP, SetMouseStateInfectCell, GetMouseStateInfectCell, this,
     		" label='Manually infect cell' group='Cells Setup' help='Toggle to switch on infect cell mode.' ");
 
+	// Callback to the drop CTL on/off switch
+	TwAddVarCB(bar, "ctl_place_switch", TW_TYPE_BOOLCPP, SetMouseStatePlaceCTL, GetMouseStatePlaceCTL, this,
+    		" label='Manually place CTL' group='Cells Setup' help='Toggle to switch on place CTL mouse mode.' ");
+
 	TwAddSeparator(bar, NULL, NULL);
 
-	TwAddButton(bar, "toggle_label", NULL, NULL, "label='Display options:'");
+	//TwAddButton(bar, "toggle_label", NULL, NULL, "label='Display options:'");
 
-	TwAddSeparator(bar, NULL, NULL);
+	//TwAddSeparator(bar, NULL, NULL);
 
 	TwAddButton(bar, "placecells_toggle", PlaceCellsOnPatches, world, " label='Place cells on patches' ");
 
@@ -234,10 +252,10 @@ void GLView::createSetupMenu(bool visible) {
 
 	TwAddSeparator(bar, NULL, NULL);
 
-	TwAddButton(bar, "todo", NULL, NULL, "label='To do:'");
+	//TwAddButton(bar, "todo", NULL, NULL, "label='To do:'");
 	TwAddButton(bar, "iws_button", ResetWorld, world, " label='  Reset World'");
-	TwAddButton(bar, "pl_toggle", NULL, NULL, "label='  Toggle patch layer'");
-	TwAddButton(bar, "reset_colour_button", NULL, NULL, " label='  Reset cell colour' ");
+	//TwAddButton(bar, "pl_toggle", NULL, NULL, "label='  Toggle patch layer'");
+	//TwAddButton(bar, "reset_colour_button", NULL, NULL, " label='  Reset cell colour' ");
 
 	TwAddSeparator(bar, NULL, NULL);
 
@@ -318,13 +336,17 @@ void GLView::setMouseState(int v) {
 }
 
 void GLView::changeSize(int w, int h) {
+
     // Reset the coordinate system before modifying
+	glViewport(0, 0, w, h);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0,w,h,0,0,1);
+    //glViewport(0, 0, w, h);
 
-    //TwWindowSize(w, h);
-
+	// Inform Menubar (system) of the new window coordinates
+    TwWindowSize(w, h);
+    //glutPostRedisplay();
 }
 
 // class UnderMousePredicate {
@@ -342,6 +364,28 @@ void GLView::changeSize(int w, int h) {
 //     int X;
 //     int Y;
 // };
+
+
+/* Given a mouse cursor location ("WindowSpace"), translates into where in the model the mouse cursor is pointing ("WorldSpace") */
+void GLView::getMouseWorldCoords(int x, int y, int z, GLdouble* WS) {
+
+	/* Complicated code to translate the mouse position into a world co-ord */
+	GLdouble mvmatrix[16];
+	GLdouble projmatrix[16];
+	GLint viewport[4];
+	//vector<double> WorldSpace[3];
+
+	// Get the matrices
+	glGetDoublev(  GL_MODELVIEW_MATRIX,  mvmatrix   );
+	glGetDoublev(  GL_PROJECTION_MATRIX, projmatrix );
+	glGetIntegerv( GL_VIEWPORT,          viewport   );
+
+	gluUnProject(x,y,z,
+			mvmatrix,projmatrix,viewport,
+			WS,WS+1,WS+2
+	);
+
+}
 
 // Catch mouse clicks
 void GLView::processMouse(int button, int state, int x, int y) {
@@ -361,12 +405,22 @@ void GLView::processMouse(int button, int state, int x, int y) {
 
 				// Mouse button has been pressed, but mouse has not moved -> check state and place cell/trigger infection
 				if ( mousedownnomove ) {
+
+					GLdouble ws[3] = {0,0,0};
+					this->getMouseWorldCoords(x, y, 0, ws);
+
+					cout << "[PM] Window: ("<<x<<","<<y<<"); UlrichWorld: ("<< x+xoffset<<","<< y+yoffset<<"); Unproject: ("<< ws[0] <<","<< ws[1] <<")\n";
+
+
 					if (mouseState == MOUSESTATE_PLACE_CELL) {
 						//cout << "In Mouse state " << mouseState << ": button went " << state << "\n";
 						world->addCell(x+xoffset,y+yoffset);
 					} else if (mouseState == MOUSESTATE_INFECT_CELL) {
 						// We may have panned left/right, so add the offset to the reported mouse position
 						world->toggleInfection(x+xoffset,y+yoffset);
+					} else if (mouseState == MOUSESTATE_PLACE_CTL) {
+						// We may have panned left/right, so add the offset to the reported mouse position
+						world->addCTL(x+xoffset,y+yoffset);
 					}
 				} // Else: Do nothing
 				mousedownnomove = false;
@@ -451,30 +505,39 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
 	// the menu. (Why? When typing in a 'q' for the filename don't want to quit!).
 	if ( TwEventKeyboardGLUT(key,x,y) ) return;
 
-	// Keys for all modes: exit and reset view
+	// Exit program
     if (key == 27) exit(0);
 
+	// Reset view
     if (key=='r') {
-   		// reset view
    		scale   = 1.0;
    		xoffset = 0.0;
    		yoffset = 0.0;
     }
 
+    // Drawing toggle
     if (key=='d') {
-   		//drawing
    		toggleDrawing();
     }
 
+    // Fullscreen toggle (TODO)
+    // See: http://biospud.blogspot.com/2009/08/write-your-own-stereoscopic-3d-program.html
+    if (key=='f') {
+    	// If not in Game mode: destroy window, setup game mode, enter game mode, create context
+    	// Else: leave game mode, create window, create context
+    	//glutGameModeString("800x600:32@60");
+    	//glutEnterGameMode();
+    }
+
     // Keys for setup
-	// Currently none (could do: d=draw patch mode, i=infect cell mode, a=autoplace cells, c=manual place cells)
+	// Currently none (could do: d=draw patch mode, i=infect cell mode, a=autoplace cells, c=manual place cells or place CTL)
 
 	// Keys for simulation
 	if (dosimulation) {
 
 		if (key=='p') {
 			//pause
-			paused= !paused;
+			paused = !paused;
 		} else if (key==43) {
 			//+
 			skipdraw++;
@@ -523,7 +586,7 @@ void GLView::handleIdle() {
     // Check if we have reached the end of the simulation
 	if ( dosimulation && !paused && world->getWorldTime() >= ibs->endTime ) {
 		cout << "Have reached the required world time of " << world->getWorldTime() << "s, ";
-		if (!ibs->useGlut) {
+		if (ibs->automaticRun) {
 			cout << "exiting program.\n";
 			exit(0);
 		} else {
@@ -576,7 +639,7 @@ void GLView::handleIdle() {
 			lastUpdate = currentTime;
 		}
 
-		// Delay draw for a little while (?) if skipdraw (def:1) is <=0.
+		// Delay draw (and indeed, world updating) for a little while (?) if skipdraw (def:1) is <=0.
 		if (skipdraw<=0 && draw) {
 			clock_t endwait;
 			float mult=-0.005*(skipdraw-1); //ugly, ah well
@@ -588,7 +651,7 @@ void GLView::handleIdle() {
 		if (draw) {
 			// Render if skipdraw is >0 or it's been (skipdraw-1?) cycles without a draw. Keeps to 30fps.
 			if (skipdraw<1 || modcounter%skipdraw==0) {
-				if (dt >= 1.0/30.0*frames*1000) renderScene();    //increase fps by skipping drawing
+				if (dt >= 1.0/30.0*frames*1000) glutPostRedisplay(); //renderScene();    //increase fps by skipping drawing
 			}
 		}
     } // End of HAVE_GLUT
@@ -622,29 +685,19 @@ void GLView::renderScene() {
 	frames++;
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glDrawBuffer(GL_BACK);
-    glReadBuffer(GL_BACK);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
     glPushMatrix();
 
 	// Global translate (from holding the mouse down and moving)
     glTranslatef(-xoffset,-yoffset,0);
 
     // Can't get scaling to work properly
-    glScalef(scale, scale, 1.0f);
+    glScalef(scale, scale, scale);
 
     // Draw the world
     if (draw) {
-		// Draw the entire world
-
-		// Reset first (must be an easier way to do this! Why doesn't glClear do this?
-		glBegin(GL_QUADS);
-		glColor3f(0.1,0.9,1.0);
-		glVertex2f(0,0);
-		glVertex2f(0,conf::HEIGHT);
-		glVertex2f(conf::WIDTH,conf::HEIGHT);
-		glVertex2f(conf::WIDTH,0);
-		glEnd();
-
 		// Draw background: patches (only if in setup mode), and cells.
 		world->drawBackground(this, dosimulation);
 
@@ -658,6 +711,7 @@ void GLView::renderScene() {
     glPopMatrix();
 
     glutSwapBuffers();
+	//glutPostRedisplay(); // Uncommenting this limits the FPS and CPS to 60.
 }
 
 void GLView::drawAgent(AbstractAgent* a) {
@@ -932,6 +986,10 @@ void GLView::toggleDrawing() {
 
 void GLView::togglePaused() {
 	paused = !paused;
+}
+
+void GLView::setPaused(bool p) {
+	paused = p;
 }
 
 

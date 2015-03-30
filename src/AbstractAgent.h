@@ -18,6 +18,9 @@
 #include <iostream>
 #include <GL/glut.h> // Required for the drawing utilities
 
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+
 #include "World.h"
 #include "GLView.h"
 
@@ -43,18 +46,40 @@ public:
     float radius;
 
 	virtual void drawAgent(GLView * const) {};
+	bool drawable;
+
 	virtual void setInput(float, World* const) {};
 	virtual void doOutput(float, World* const) { cout << "\t"<<this<<" [doOutput not defined]";};
 
 	// Overload these
 	virtual void printInfo() { cout << this << " AbstractAgent [I need to be defined]\n"; }; // Change to logoutput?
-	virtual string getAgentType() = 0;
+	virtual string getAgentType() {return "AbstractAgent";}; // Previously just "=0"
 
 	// Extension functions:
 	// - Predeterminable actions?
 	// - a 'register' function? (for actions, options)
 
+private:
+
+
+	// For serialisation:
+    friend class boost::serialization::access;
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version) {
+    // TODO: This should not be commented out!! Yet crashed program without exception if included.
+/*
+    	ar & pos;
+        ar & angle;
+        ar & speed;
+        ar & radius;
+        ar & active;
+        ar & drawable;
+        ar & lifespan;
+*/
+    }
+
 };
 
+BOOST_SERIALIZATION_ASSUME_ABSTRACT(AbstractAgent);
 
 #endif /* ABSTRACTAGENT_H_ */

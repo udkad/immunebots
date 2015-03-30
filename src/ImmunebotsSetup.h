@@ -20,9 +20,10 @@ public:
 
 	/* The setup variables */
 	bool useGlut;
+	bool automaticRun;
+	string id;
 	int endTime;
 	string setupfilename;
-	string id;
 	string layoutfilename;
 
 	/* The setup functions */

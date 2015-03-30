@@ -8,6 +8,11 @@
 #include "CTL.h"
 #include "Cell.h"
 
+// If we don't have an explicit list of CTL (as they're stored in the AbstractAgent pointer list, agents),
+// then we need to explicitly export the CTL class.
+// c.f. Infected cells, which are AbstractAgent->Cells but stored in the Cells pointer list, cells.
+BOOST_CLASS_EXPORT_GUID(CTL, "CTL");
+
 CTL::CTL() {
 	init();
 }
@@ -34,6 +39,8 @@ void CTL::init() {
     lifespan = 0.0;
     timer = 0.0;
     state = STATE_MOVE;
+
+    drawable = true;
 }
 
 CTL::~CTL() {
@@ -44,6 +51,8 @@ CTL::~CTL() {
 
 // Draw the CTL
 void CTL::drawAgent(GLView * v) {
+
+	if (!drawable) return;
 
 	// 1. Draw the body (simple circle)
     glBegin(GL_POLYGON);
@@ -144,16 +153,25 @@ void CTL::doOutput(float dt, World *w) {
 
 		// TODO: Change this (make it switchable: deactivate, bound, wrap)
 
-		// OFFSCREEN 1: Torus wrap
+		// OFFSCREEN 1: Torus wrap the edge of the world
 	    if (pos.x<0) 		pos.x=1800+pos.x;
 	    if (pos.x>=1800) 	pos.x=pos.x-1800;
 	    if (pos.y<0) 		pos.y=1000+pos.y;
 	    if (pos.y>=1000)	pos.y=pos.y-1000;
 
-		// OFFSCREEN 2: Kill the CTL
+	    // OFFSCREEN 2: Bounce off the boundary box (default behaviour)
+	    if (pos.x>w->bounding_max.x) { 	pos.x=w->bounding_max.x; angle += M_PI; }
+	    if (pos.x<w->bounding_min.x) { 	pos.x=w->bounding_min.x; angle += M_PI; }
+	    if (pos.y>w->bounding_max.y) { 	pos.y=w->bounding_max.y; angle += M_PI; }
+	    if (pos.y<w->bounding_min.y) {	pos.y=w->bounding_min.y; angle += M_PI; }
+
+		// OFFSCREEN 3: Kill the CTL
 		if ( pos.x < 0 || pos.x >= conf::WIDTH || pos.y < 0 || pos.y >= conf::HEIGHT ) {
 			active = false;
 		}
+
+		// Check if we should draw this CTL cell
+		drawable = true;//(pos.x < w->bounding_max.x && pos.x > w->bounding_min.x && pos.y < w->bounding_max.y && pos.y > w->bounding_min.y);
 	} // else: does nothing (sits on cell)
 
 }

@@ -18,6 +18,8 @@
 
 using namespace std;
 
+BOOST_CLASS_EXPORT_GUID(Cell, "Cell");
+
 // These cells are AbstractAgents, even though they are only "active" if infected. They also don't move at all.
 Cell::Cell() {
 
@@ -25,17 +27,22 @@ Cell::Cell() {
     pos   = Vector2f(randf(0,conf::WIDTH),randf(0,conf::HEIGHT));
     angle = randf(-M_PI,M_PI);
     speed = 0.00001;
-    id    = 0;
-    nearestPatch = Vector2f(conf::WIDTH/2, conf::HEIGHT/2);
+
+    //nearestPatch = Vector2f(conf::WIDTH/2, conf::HEIGHT/2);
     radius = conf::BOTRADIUS;
     cType = CELL_NOT_SUSCEPTIBLE;
 
     // Rates (in secs)
+    // TODO: This should be set by the virion!
     r_vproduction = 0.0023;// = 200 * 1/(24*60*60); // 200 virions per day
-    r_death = 0.000005787;// = 1/2*1/(24*60*60); // Infected cell death rate: Half life of approx 2 days
+    r_death = 0.000005787; // = 1/2*1/(24*60*60); // Infected cell death rate: Half life of approx 2 days
 
     active = false;
     lifespan = 0.0;
+
+    // True by default: these cells do no move AND define the boundary box
+    drawable = true;
+    dead = false;
 
 }
 

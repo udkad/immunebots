@@ -20,14 +20,15 @@
 #include "View.h"
 #include "AbstractAgent.h"
 #include "Cell.h"
+#include "CTL.h"
 #include <vector>
 
 using namespace std;
 
 World::World( ImmunebotsSetup* is ):
-        modcounter(0),
-        CLOSED(false),
-        worldtime(0.0)
+		modcounter(0),
+		CLOSED(false),
+		worldtime(0.0)
 {
 	ibs = is;
 
@@ -90,12 +91,12 @@ void World::resetBoundingBox() {
 	bounding_max = Vector2f(0,0);
 
 	// Loop through patches
-	for (int p=0; p<patchV.size(); p++) {
+	for (int p=0; p<(int)patchV.size(); p++) {
 		checkBoundingBox(patchV[p]/conf::WIDTH,patchV[p]%conf::WIDTH);
 	}
 
 	// Loop through cells
-	for (int c=0; c<cells.size(); c++) {
+	for (int c=0; c<(int)cells.size(); c++) {
 		checkBoundingBox(cells[c]->pos.x,cells[c]->pos.y);
 	}
 }
@@ -179,7 +180,7 @@ void World::placeCells() {
 	// Step through the patch vector to find the last patch and first patch
 	int lastPatch = 0;
 	int firstPatch = conf::WIDTH*conf::HEIGHT;
-	for ( int p=0; p<patchV.size(); p++ ) {
+	for ( int p=0; p<(int)patchV.size(); p++ ) {
 		if (patchV[p]>lastPatch)  lastPatch  = patchV[p];
 		if (patchV[p]<firstPatch) firstPatch = patchV[p];
 	}
@@ -281,10 +282,12 @@ float * World::getCellColourFromType(int ct) {
 		case Cell::CELL_CTL: 				return(COLOUR_CTL);
 		case Cell::CELL_DEAD: 				return(COLOUR_DEAD);
 	};
+
+	return(0);
 }
 
 void World::setInputs(float timestep) {
-	for (int i=0;i<agents.size();i++) {
+	for (int i=0;i<(int)agents.size();i++) {
 		agents[i]->setInput(timestep, this);
 	}
 }
@@ -435,7 +438,7 @@ void World::setInputs() {
 
 void World::processOutputs(float timestep) {
 	// Loop through all active agents
-	for (int i=0;i<agents.size();i++) {
+	for (int i=0;i<(int)agents.size();i++) {
 		agents[i]->doOutput(timestep, this);
 	}
 }
@@ -620,12 +623,19 @@ void World::addCell(int x, int y) {
     setCellShadow(c);
 }
 
+void World::addCTL(int x, int y) {
+	//cout << " - Placing CTL at ("<<x<<","<<y<<")\n";
+	// Add the CTL cell at the required place
+	CTL *ctl = new CTL(x,y);
+	this->addAgent( ctl );
+}
+
 void World::resetShadowLayer() {
 	// First, reset to 0
 	for (int x=0;x<conf::WIDTH;x++) for (int y=0;y<conf::HEIGHT;y++) CellShadow[x][y] = 0;
 
 	// Then, setup through the cells vector
-	for (int i=0;i<cells.size();i++) {
+	for (int i=0;i<(int)cells.size();i++) {
 		setCellShadow( cells[i] );
 	}
 }
@@ -654,7 +664,7 @@ void World::_setCellShadow(Cell *c, Cell * value) {
 
 // When called by the user through the GUI, will iterate through all cells and reset the susceptibility chance
 void World::resetCellSusceptibility() {
-	for (int i=0;i<cells.size();i++) {
+	for (int i=0;i<(int)cells.size();i++) {
 		if ( cells[i]->cType != Cell::CELL_CTL || cells[i]->cType != Cell::CELL_INFECTED ) {
 			// If not infected or CTL, then reset to 0 and invoke chance of susceptibility
 			cells[i]->cType = Cell::CELL_NOT_SUSCEPTIBLE;
@@ -668,6 +678,7 @@ void World::clearAllCells() {
 	agents.clear();
 	cells.clear();
 	resetShadowLayer();
+	worldtime = 0.0;
 	// Also reset the bounding box (depends on the patch vector)
 	resetBoundingBox();
 }
@@ -718,13 +729,21 @@ void World::writeReport() {
 
 
 void World::reset() {
+
     for (int x=0;x<conf::WIDTH;x++) {
     	patch.push_back( vector<bool>(conf::HEIGHT,false) );
     	CellShadow.push_back( vector<Cell*>(conf::HEIGHT,(Cell*)0) );
     }
+
 	patchV.clear();
 	cells.clear();
     agents.clear();
+
+    worldtime = 0.0;
+
+	bounding_min = Vector2f(-1,-1);
+	bounding_max = Vector2f(-1,-1);
+
 }
 
 void World::setClosed(bool close) {
@@ -747,7 +766,7 @@ void World::drawBackground(View* view, bool simulationmode) {
 
 	// Draw patches from patchV, but only if in setup mode
 	if ( !simulationmode ) {
-		for (int i=0; i<patchV.size(); i++) {
+		for (int i=0; i<(int)patchV.size(); i++) {
 			view->drawDot( int(patchV[i]/conf::WIDTH), (patchV[i]%conf::WIDTH) );
 		}
 	}
@@ -780,7 +799,8 @@ void World::drawBackground(View* view, bool simulationmode) {
 void World::drawForeground(View* view) {
     vector<AbstractAgent*>::const_iterator ait;
     for ( ait = agents.begin(); ait != agents.end(); ++ait) {
-        view->drawAgent(*ait); // note: this just calls ait->drawAgent(view);
+    	// Only draws the agent if it's within the world bounding box
+    	view->drawAgent(*ait); // note: this just calls ait->drawAgent(view);
         //(*ait)->drawAgent((GLView)view);	// Skip the middle man, if I can figure out how
     }
 }
@@ -793,8 +813,8 @@ int World::numCells() const {
 	return cells.size();
 }
 
-// Will save the patch and cell info as csv to a file (specified in name)
-//TODO: Check if we overwrite an existing file
+// Will save the patch, cell and agent info to a file.
+// TODO: Check if we overwrite an existing file
 void World::saveLayout() {
 
 	ofstream setupfile(ibs->layoutfilename);
@@ -803,9 +823,11 @@ void World::saveLayout() {
 		return;
 	}
 
+	/*
 	// Ensure there is at least one agent which is an infected cell
+	// Can't remember why I even check for this, infected cells are currently lost between saves.
 	bool haveAnInfectedCell = false;
-	for (int a=0; a<agents.size(); a++) {
+	for (int a=0; a<(int)agents.size(); a++) {
 		if ( agents[a]->getAgentType().compare("Cell") == 0 ) {
 			// Cast to a Cell and check if infective
 			if ( ((Cell*)(agents[a]))->isInfected() ) {
@@ -817,10 +839,15 @@ void World::saveLayout() {
 	}
 	if (!haveAnInfectedCell) cout << "WARNING: No infected cells in the layout.\n";
 
-    {	// save setup data, i.e. certain parts of the world class, to archive
-        boost::archive::text_oarchive oa(setupfile);
-        oa << (*this);
+	*/
+
+	// Explicit registration of AbstractAgent, CTL and Cell
+
+    {	// save setup data, i.e. certain parts of the world class, to archive (parts which are saved are in the header file)
+		boost::archive::text_oarchive oa(setupfile);
+		oa << (*this);
     } 	// archive and stream closed when destructors are called
+
 
 }
 
@@ -836,30 +863,29 @@ void World::loadLayout() {
 	}
 
 	World wyrd(new ImmunebotsSetup()); // The wyrd world will temporarily store the world we saved from set up
-	boost::archive::text_iarchive ia(setupfile);
-	ia >> wyrd;
-	// Now re-assign cells and patch (will overwrite cells and patches)
-	cells = wyrd.cells;
+
+	{
+		boost::archive::text_iarchive ia(setupfile);
+		ia >> wyrd;
+	}
+
+	// Now re-assign cells and patch (will overwrite cells, agents and patches)
+	cells  = wyrd.cells;
 	patchV = wyrd.patchV;
+	agents = wyrd.agents;
+
 	bounding_min = wyrd.bounding_min;
 	bounding_max = wyrd.bounding_max;
-
-	cout << "Loaded cells and patch info\n";
-	bounding_min = wyrd.bounding_min;
-	// Add cells to active queue
-	for (int i=0;i<cells.size();i++) {
-		if ( cells[i]->isActive() ) {
-			agents.push_back( cells[i] );
-		}
-	}
 
 	// Reset the shadow layer
 	resetShadowLayer();
 
+	// TODO: This takes too long! But I don't know how to speed it up.
 	// Reset and regenerate the patch[x][y] matrix from the vector.
 	for (int i=0;i<conf::WIDTH;i++) for (int j=0;j<conf::HEIGHT;j++) patch[i][j] = 0;
-	for (int p=0;p<patchV.size();p++) {
+	for (int p=0;p<(int)patchV.size();p++) {
 		patch[int(patchV[p]/conf::WIDTH)][patchV[p]%conf::WIDTH] = true;
 	}
+
 }
 

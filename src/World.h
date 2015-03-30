@@ -21,6 +21,7 @@ class View;
 class World {
 
 public:
+
     World(ImmunebotsSetup*);
     ~World();
 
@@ -56,6 +57,7 @@ public:
 	float getWorldTime();
 
     void addCell(int x, int y);
+    void addCTL(int x, int y);
     void addRandomCells(int num);
     void addAgent(AbstractAgent *);
 
@@ -81,11 +83,11 @@ public:
     void saveLayout();
     void loadLayout();
 
-private:
-
     // Bounding box
     Vector2<int> bounding_min;
     Vector2<int> bounding_max;
+
+private:
 
     void setInputs(float timestep);
     void processOutputs(float timestep);
@@ -129,6 +131,7 @@ private:
         ar & patchV;
         ar & bounding_max;
         ar & bounding_min;
+        ar & agents;
     }
 
 };

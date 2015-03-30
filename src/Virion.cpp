@@ -16,7 +16,7 @@ Virion::Virion(Cell *pCell) {
 
 	// Set random direction
 	angle = randf(-M_PI, M_PI);
-	speed = 1.0; // TODO: we should be able to change this!
+	speed = 0.1; // TODO: we should be able to change this! (before: 1.0)
 
 	pos 	= pCell->pos;
 	active 	= true;
@@ -24,10 +24,12 @@ Virion::Virion(Cell *pCell) {
 	lifespan = 0.0;
 
 	r_death  = 1/6 * 1/(60*60); 	/* 6 hours to clearance */
-	r_infect = 1.0; 				/* No idea, arbitrary value (ensure infection when hitting a cell) */
+	r_infect = 0.1; 				/* No idea, arbitrary value (ensure infection when hitting a cell) */
 
 	parentCell 	= pCell;
 	currentCell = 0; // Although technically we're on the parent when we are created
+
+	drawable=true;
 }
 
 Virion::~Virion() {
@@ -41,35 +43,44 @@ Virion::~Virion() {
 // This should only be called from the view!
 void Virion::drawAgent(GLView * v) {
 
+	if (!drawable) return;
+
 	// We initially drew the virion as a green dot, but now we draw it as a green circle of radius 1 with a black border.
 	// It still only infects if the center (pos.{x,y}) is over a susceptible cell.
 
-	/*	// Draw a green dot
+	// Draw a point or a line
+	bool drawPoint = true;
+
+	if (drawPoint) {
+
+		// Draw a green dot
 		glBegin(GL_POINTS);
-		glColor3f(0,0,0);
+		glColor3f(0.0,0.0f,0.0);
 		glVertex2f(pos.x,pos.y);
 		glEnd();
-	 */
 
-	int r = 1;
-	// 1. Draw the body (simple circle)
-    glBegin(GL_POLYGON);
-    glColor3f(0.0,1.0f,0.0);
-    v->drawCircle(pos.x, pos.y, r);
-    glEnd();
+	} else {
 
-    // 2. Draw a black line around the circle
-    glBegin(GL_LINES);
-    glColor3f(0,0,0); // Black outline
-    // Draw outline as set of 16 lines around the circumference
-    float n;
-    for (int k=0;k<17;k++) {
-        n = k*(M_PI/8);
-        glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), 0);
-        n = (k+1)*(M_PI/8);
-        glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), 0);
-    }
-    glEnd();
+		int r = 1;
+		// 1. Draw the body (simple circle)
+		glBegin(GL_POLYGON);
+		glColor3f(0.0,1.0f,0.0);
+		v->drawCircle(pos.x, pos.y, r);
+		glEnd();
+
+		// 2. Draw a black line around the circle
+		glBegin(GL_LINES);
+		glColor3f(0,0,0); // Black outline
+		// Draw outline as set of 16 lines around the circumference
+		float n;
+		for (int k=0;k<17;k++) {
+			n = k*(M_PI/8);
+			glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), 0);
+			n = (k+1)*(M_PI/8);
+			glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), 0);
+		}
+		glEnd();
+	}
 
     /*	// This should be made optional. Draw green line from parent cell to virion.
 		glBegin(GL_LINES);
@@ -120,6 +131,16 @@ void Virion::doOutput(float dt, World *w) {
 		// Kill the virion if it goes off the screen
 		if ( pos.x < 0 || pos.x >= conf::WIDTH || pos.y < 0 || pos.y >= conf::HEIGHT ) {
 			active = false;
+		}
+
+		// Also kill the virion if it goes out of the bounding box (probably won't infect any more cells)
+		// Check if we should draw this virion
+		if (pos.x < w->bounding_max.x && pos.x > w->bounding_min.x && pos.y < w->bounding_max.y && pos.y > w->bounding_min.y) {
+			active = true;
+			drawable = true;
+		} else {
+			active   = false;
+			drawable = false;
 		}
 	}
 }

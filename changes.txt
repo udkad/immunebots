@@ -1,5 +1,9 @@
 == Changelog
 
+Version 1.0001
+Backup date: 2011-08-26
+Added serialisation code (using Boost archive). More command line options, including "no draw" (-d), allow simulation to start automatically (-a "automatic run"), set run ID (-i IDNUMBER).
+
 Version 1.0
 Backup date: 2011-04-28
 Started to modularise the code - added AbstractAgent class as a template for all Agents (stationary or mobile).

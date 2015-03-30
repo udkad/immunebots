@@ -2,6 +2,7 @@
 #define GLVIEW_H
 
 #include <GL/glut.h>
+#include <vector>
 
 #include "View.h"
 
@@ -10,6 +11,7 @@ const static int MOUSESTATE_DEFAULT     = 0;
 const static int MOUSESTATE_DRAW_PATCH  = 1;
 const static int MOUSESTATE_PLACE_CELL  = 2;
 const static int MOUSESTATE_INFECT_CELL = 3;
+const static int MOUSESTATE_PLACE_CTL   = 4;
 
 class AbstractAgent;
 class GLView;
@@ -43,6 +45,9 @@ public:
     void createSetupMenu(bool visible);
     void createSimulationMenu(bool visible);
 
+    // Returns the WorldSpace (Model) co-ords of the mouse position.
+    void getMouseWorldCoords(int, int, int, GLdouble*);
+
     //GLUT functions
     void processNormalKeys(unsigned char key, int x, int y);
     void processSpecialKeys(int key, int x, int y);
@@ -61,6 +66,7 @@ public:
 
     void toggleDrawing();
     void togglePaused();
+    void setPaused(bool p);
 
     // Drawing functions
     void drawCircle(float x, float y, float r);

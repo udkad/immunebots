@@ -37,6 +37,11 @@ int main(int argc, char **argv) {
     processArguments(argc, argv, is);
     World* world = new World(is);
     GLVIEW = new GLView(world, is);
+    if (is->automaticRun) {
+    	// Want to start the simulation immediately..
+    	if (is->useGlut) GLVIEW->switchToSimulationMode(true);
+    	GLVIEW->setPaused(false);
+    }
     cout << "Finished setting up config, the world and GLView\n";
 
     cout << "Display the help, regardless of whether -h was set or not\n";
@@ -68,11 +73,11 @@ int main(int argc, char **argv) {
     // Initialise and create the Tw menu (only display the setup menu at the start)
 	TwInit(TW_OPENGL, NULL);
 	TwWindowSize(conf::WWIDTH,conf::WHEIGHT);
-    GLVIEW->createSetupMenu(true);
-    GLVIEW->createSimulationMenu(false);
+    GLVIEW->createSetupMenu(true);	// Create menu now (creates as visible)
+    GLVIEW->createSimulationMenu(false); // Create menu now, but hide it until required.
 
     // Continue with rest of the GL initialisation
-    glClearColor(0.9f, 0.9f, 1.0f, 0.0f);
+    glClearColor(0.1,0.9,1.0,1.0);
     glutDisplayFunc(gl_renderScene);
     glutIdleFunc(gl_handleIdle);
     glutReshapeFunc(gl_changeSize);
@@ -97,20 +102,27 @@ int main(int argc, char **argv) {
 void processArguments(int argc, char **argv, ImmunebotsSetup *is) {
 	int o;
 	string runid; // If there is a runid specified on the command line, then ensure that it overwrites the one in the config file
-	cout << "Processing arguments: " << **argv << endl;
+	cout << "Processing arguments: " << argv << endl;
 	while ((o = getopt(argc, argv, "ade:?hs:")) != -1) {
 	        switch (o) {
-	        case 'a': 	break;
-	        case 'd':
-	        	cout << "Disabling GLUT\n";
-	        	is->useGlut=false; break;
-	        case 'e':
+	        case 'a':	// Automatic run
+	        	cout << "Automatically start simulation and end program when complete.\n";
+	        	is->automaticRun=true;
+	        	break;
+	        case 'd':	// Disable draw
+	        	cout << "Disabling GLUT, autostart simulation and autoexit on completion.\n";
+	        	is->useGlut=false;
+	        	is->automaticRun=true;
+	        	break;
+	        case 'e':	// End time of the simulation
 	        	is->setEndTime(optarg); break;
-	        case '?':	// Intentional fallthrough
-	        case 'h': 	printHelp(); abort();
-	        case 'i':	runid = optarg; break;
-	        case 's':
-	        	// Check setup file exists
+	        case '?':	// Intentional fallthrough (Help)
+	        case 'h':	// Display help
+	        	printHelp(); abort();
+	        case 'i':	// Commandline RunID (override)
+	        	runid = optarg; break;
+	        case 's':	// Load setup file
+	        	// Note: First check setup file exists
 	        	ifstream setupfn(optarg);
 	        	if (!setupfn.good()) {
 	        		cout << "WARNING: Could not find the setup file ('"<<optarg<<"')\n";
@@ -129,10 +141,11 @@ void processArguments(int argc, char **argv, ImmunebotsSetup *is) {
 }
 
 void printHelp() {
-	cout << "Immunebots Version 1.0\n";
-	cout << "   -c <config>\tLoad the specified config file\n";
-	cout << "   -d\t\tTurn draw off\n";
+	cout << "Immunebots Version 1.0001\n";
+	cout << "	-a\t\tAutomate simulation start and exit program when done\n";
+	cout << "   -d\t\tTurn draw off (implies -a, require -s)\n";
 	cout << "   -e <time>\tRun simulation until <time>, e.g. '84600s' or '7d'\n";
 	cout << "   -h\t\tDisplay help (this screen)\n";
-	cout << "   -s\t\tUNUSED Automatically start the simulation (must be used with -c)\n";
+	cout << "   -i <run id>\tSet run ID (overrides config file run ID)\n";
+	cout << "   -s <config>\tLoad the specified settings file\n";
 }

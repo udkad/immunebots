@@ -16,9 +16,10 @@ using namespace std;
 ImmunebotsSetup::ImmunebotsSetup() {
 	// Fill out the default values for all the bools etc
 	useGlut = true;
+	automaticRun = false;
 	endTime = 7*(24*60*60); // End at day 7 (note: in seconds!)
 	setupfilename = string("");
-	layoutfilename = string("DefSetup.sav");
+	layoutfilename = string("Setup-Grant.sav");
 }
 
 ImmunebotsSetup::~ImmunebotsSetup() {
@@ -30,44 +31,45 @@ void ImmunebotsSetup::processSetupFile() {
 
 	if (!sfile.good()) {
 		cout << "WARNING: Could not find the setup file ('"<<setupfilename<<"')\n";
-	} else {
-		// Parse the setup file
-		string line;
-		// Lots of regex's
-		boost::regex re2("\\s*([^#][^\\s]+)\\s+([^\\s]+)", boost::regex::perl|boost::regex::icase);
-		boost::regex re3("\\s*([^#][^\\s]+)\\s+([^\\s]+)\\s+(.+)", boost::regex::perl|boost::regex::icase);
-		boost::regex reC("\\s*#.+", boost::regex::perl|boost::regex::icase);
-		boost::regex reS("\\s*", boost::regex::perl|boost::regex::icase);
-		boost::cmatch ma;
+		// Can't go any further, return
+		return;
+	}
+	// Parse the setup file
+	string line;
+	// Lots of regex's (2-args, 3-args, C [??], S [??])
+	boost::regex re2("\\s*([^#][^\\s]+)\\s+([^\\s]+)", boost::regex::perl|boost::regex::icase);
+	boost::regex re3("\\s*([^#][^\\s]+)\\s+([^\\s]+)\\s+(.+)", boost::regex::perl|boost::regex::icase);
+	boost::regex reC("\\s*#.+", boost::regex::perl|boost::regex::icase);
+	boost::regex reS("\\s*", boost::regex::perl|boost::regex::icase);
+	boost::cmatch ma;
 
-		while ( sfile.good() ) {
-			getline( sfile, line );
-			if ( boost::regex_match(line.c_str(), ma, re2) ) {
-				// Matches: Something Something
-				string keyword = string(ma[1].first, ma[1].second);
-				string value = string(ma[2].first, ma[2].second);
+	while ( sfile.good() ) {
+		getline( sfile, line );
+		if ( boost::regex_match(line.c_str(), ma, re2) ) {
+			// Matches: Something Something
+			string keyword = string(ma[1].first, ma[1].second);
+			string value = string(ma[2].first, ma[2].second);
 
-				if (boost::iequals(keyword, "runid")) {
-					// Do not over-write an id set by the command line
-					if ( id.empty() ) {
-						id = value;
-					}
-				} else if (boost::iequals(keyword, "endtime")) {
-					setEndTime(value.c_str());
-				} else if (boost::iequals(keyword, "layoutfile")) {
-					layoutfilename = value;
-				} else {
-					cout << "WARNING: Unrecognised line in setupfile (ignoring..): " << line << endl;
+			if (boost::iequals(keyword, "runid")) {
+				// Do not over-write an id set by the command line
+				if ( id.empty() ) {
+					id = value;
 				}
-			} else if ( boost::regex_match(line.c_str(), ma, re3) ) {
-				// Matches: Something Something Something
-				string agent = string(ma[1].first, ma[1].second);
-				cout << " -- Found rate for agent '"<< agent << "'\n";
-			} else if ( boost::regex_match(line.c_str(), ma, reC) || boost::regex_match(line.c_str(), ma, reS) ) {
-				// Comment or blank line, ignore
+			} else if (boost::iequals(keyword, "endtime")) {
+				setEndTime(value.c_str());
+			} else if (boost::iequals(keyword, "layoutfile")) {
+				layoutfilename = value;
 			} else {
 				cout << "WARNING: Unrecognised line in setupfile (ignoring..): " << line << endl;
 			}
+		} else if ( boost::regex_match(line.c_str(), ma, re3) ) {
+			// Matches: Something Something Something
+			string agent = string(ma[1].first, ma[1].second);
+			cout << " -- Found rate for agent '"<< agent << "'\n";
+		} else if ( boost::regex_match(line.c_str(), ma, reC) || boost::regex_match(line.c_str(), ma, reS) ) {
+			// Comment or blank line, ignore
+		} else {
+			cout << "WARNING: Unrecognised line in setupfile (ignoring..): " << line << endl;
 		}
 	}
 }

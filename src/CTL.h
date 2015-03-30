@@ -12,6 +12,10 @@
 #include "World.h"
 #include "AbstractAgent.h"
 
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/serialization/export.hpp>
+
 static int STATE_MOVE  = 0;
 static int STATE_SENSE = 1;
 static int STATE_KILL  = 2;
@@ -41,6 +45,26 @@ private:
 
 	/* Helper functions */
 	float getPersistenceLength(); // returns a persistence length between (4.0,6.0)
+
+	// For serialisation:
+    friend class boost::serialization::access;
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version) {
+    	ar & boost::serialization::base_object<AbstractAgent>(*this);
+        ar & pos;
+        ar & angle;
+        ar & speed;
+        ar & radius;
+        ar & active;
+        ar & drawable;
+        ar & lifespan;
+
+        ar & state;
+        ar & currentCell;
+        ar & lastCell;
+        ar & timer;
+
+    }
 
 };
 
