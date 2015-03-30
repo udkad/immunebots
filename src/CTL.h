@@ -49,6 +49,7 @@ private:
 	int state; // Current state of the CTL (e.g. move, sense, kill)
 	Cell *currentCell;
 	Cell *lastCell;
+	Cell *nearestCell;
 	float timer;
 	float cellshadow[9][2];
 
@@ -58,6 +59,7 @@ private:
 
 	/* Helper functions */
 	float getPersistenceLength(World *); // returns a persistence length between (4.0,6.0)
+	float getAngle(World *);
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
 	// For serialisation:

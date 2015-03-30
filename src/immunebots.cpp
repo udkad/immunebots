@@ -33,10 +33,10 @@ void printHelp();
 
 int main(int argc, char **argv) {
 
-	float version = 1.0007;
+	float version = 1.00081;
 
 	/*
-	 * Version differences (v brief):
+	 * Version differences in brief:
 	 *
 	 *  1.0001: First "mature" release.
 	 *  1.0002: Support for compiler directives for NO_SERIALISATION and NO_GL (i.e. headless run).
@@ -50,9 +50,12 @@ int main(int argc, char **argv) {
 	 *  1.0007: New End Condition ('Event End 3d@1000Infected' => "End 3 days after Infected count reached 1000").
 	 *  		CTL now log how much time they spend in each state (move, scan, lyse) if stats_extra is enabled.
 	 *   		Minor corrections to the CTL code.
+	 *  1.0008: Added in simple chemotaxis (after every persistence length of movement, there is a configurable chance than
+	 *            the CTL will move in the direction of the nearest infected cell).
+	 *          Reduced internal grid size from 1M cells to 100k cells (RAM from >3GB to 0.45).
+	 *  1.00081: Improved run times by using the agents vector inside of the cells vector for finding the current pop of Infected cells.
 	 *
 	 */
-
 
 	cout <<"  _                                            _             _        " 		<< endl;
 	cout <<" (_) _ __ ___   _ __ ___   _   _  _ __    ___ | |__    ___  | |_  ___ " 		<< endl;

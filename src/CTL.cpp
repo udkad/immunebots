@@ -28,14 +28,15 @@ CTL::CTL(int x, int y, ImmunebotsSetup * ibs) {
 void CTL::init(ImmunebotsSetup * ibs) {
 	// CTL have a position, and a speed
     pos   = Vector2f(randf(0,ibs->getParm("WIDTH",conf::DefaultWidth)),randf(0,ibs->getParm("HEIGHT",conf::DefaultHeight)));
-    angle = randf(-M_PI,M_PI);
+    angle = 0.0;
     speed = ibs->getParm("r_ctlspeed",1.0f);
-    radius = conf::BOTRADIUS;
+    radius = conf::BOTRADIUS;;
     agent_type = AbstractAgent::AGENT_CTL;
     boundarycondition = ibs->getParm("ctl_boundary", BOUNDARY_BOUNCE);
 
     currentCell = 0;
     lastCell = 0;
+    nearestCell = 0;
 
     active = true;
     lifespan = 0.0;
@@ -79,6 +80,15 @@ void CTL::drawAgent(GLView * v) {
 	// 1. Draw the body (simple circle)
     glColor4f(conf::COLOUR_CTL[0],conf::COLOUR_CTL[1],conf::COLOUR_CTL[2], 1.0);
     v->drawCircle(pos.x, pos.y, draw_priority, radius, false);
+
+    // 2. [TEMP] Draw line from CTL to nearest infected cell
+    if (nearestCell!=0) {
+    	glBegin(GL_LINES);
+    	glColor3f(0,0,1);
+    	glVertex2f(nearestCell->pos.x,nearestCell->pos.y);
+    	glVertex2f(pos.x, pos.y);
+    	glEnd();
+    }
 
     // 2. Show which state the CTL is in
     /*
@@ -148,7 +158,8 @@ void CTL::setInput(float dt, World * w) {
 				state = STATE_MOVE;
 				// Previous angle was 0-360 range (actually -180 to 180). Now make it +/-22.5 (i.e. 1/4 PI) of previous angle
 				//angle = randf(-M_PI,M_PI);
-				angle += randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
+				// Do we randomly choose a new direction or do we find the nearest infected cell (within the chemo-radius) and move towards it?
+				angle = getAngle(w);
 				timer = getPersistenceLength(w);
 				lastCell = currentCell;
 				currentCell = 0;
@@ -169,7 +180,7 @@ void CTL::setInput(float dt, World * w) {
 			//cout << this << " CTL has killed cell ("<< currentCell << "); moving on\n";
 			state = STATE_MOVE;
 			//angle = randf(-M_PI,M_PI);
-			angle += randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
+			angle = getAngle(w); //randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
 			timer = getPersistenceLength(w);
 			lastCell = currentCell;
 			currentCell = 0;
@@ -178,6 +189,28 @@ void CTL::setInput(float dt, World * w) {
 	}
 
 }
+
+float CTL::getAngle(World *w) {
+
+	float newangle = 0.0;
+
+	if ( w->ibs->getParm("ctl_chemotaxis", 0) && randf(0.0f, 1.0f) < w->ibs->getParm("ctl_chemotaxis_pc", 0.05f) ) {
+		// Choose a trajectory which will hit the nearest infected cell
+		// TODO: Limit the chemotaxis scan radius [optional]
+
+		nearestCell = w->getNearestInfectedCell(pos.x, pos.y);
+		if (nearestCell!=0) {
+			// Set angle based on position of nearest cell: tan0 = o/a.
+			newangle = atan2( nearestCell->pos.y - pos.y, nearestCell->pos.x - pos.x );
+		}
+
+	} else {
+		newangle = angle + randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
+	}
+
+	return(newangle);
+}
+
 
 float CTL::getPersistenceLength(World *w) {
 	// TODO: Allow persistence lengths of 0 (i.e. immediate angle rotations)
@@ -189,8 +222,8 @@ void CTL::doOutput(float dt, World *w) {
 
 	if ( state == STATE_MOVE ) {
 		// Just move (for now)
-		pos.x += dt*speed*sin(angle);
-		pos.y += dt*speed*cos(angle);
+		pos.x += dt*speed*cos(angle);
+		pos.y += dt*speed*sin(angle);
 
 		// Reset the angle once we reach the end of our persistence length
 		if ( timer <= 0 ) {

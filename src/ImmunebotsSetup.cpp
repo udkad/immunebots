@@ -208,6 +208,13 @@ void ImmunebotsSetup::processSetupFile() {
 						}
 					}
 
+				} else if ( boost::iequals(pname,"CHEMOTAXIS_PC") ) {
+					// If any chemotaxis percentage over 0, then set ctl_chemotaxis.
+					setParm( string("ctl_chemotaxis_pc"), pval );
+					if ( getParm( "ctl_chemotaxis_pc", 0.05f ) > 0.0 ) {
+						setParm( string("ctl_chemotaxis"), 1 );
+					}
+
 				} else if (boost::iequals(keyword, "Nonsusceptible")) {
 					setParm( string("nc_").append(pname), pval );
 				} else if (boost::iequals(keyword, "Susceptible")) {
@@ -400,7 +407,7 @@ void ImmunebotsSetup::handleEvents( std::string type, std::string value ) {
 	world->addEvent(e);
 }
 
-// Translate pretty string to agent type. .e.g "CTL" to 4
+// Translate pretty string to agent type, e.g "CTL" to 4
 int ImmunebotsSetup::Agent2Type( string agentpp ) {
 	if ( boost::iequals(agentpp, "CTL") )              		{ return(AbstractAgent::AGENT_CTL);                }
 	else if ( boost::iequals(agentpp, "Susceptible") ) 		{ return(AbstractAgent::AGENT_SUSCEPTIBLE);        }
@@ -408,9 +415,23 @@ int ImmunebotsSetup::Agent2Type( string agentpp ) {
 	else if ( boost::iequals(agentpp, "Infected") )    		{ return(AbstractAgent::AGENT_INFECTED);           }
 	else if ( boost::iequals(agentpp, "InfectedNoVirions") ){ return(AbstractAgent::AGENT_INFECTED_NOVIRIONS); }
 	else {
-		cout << "[WARNING] Unable to parse agent ("<<agentpp<<") in config file. CTL, Susceptible, Virion and Infected[NoVirions] are the only valid options." << endl;
+		cout << "[WARNING] Unable to parse agent (" << agentpp << ") in config file. CTL, Susceptible, Virion and Infected[NoVirions] are the only valid options." << endl;
 		return(0);
 	}
+}
+
+// Translate pretty agent type to string, e.g 4 to "CTL"
+string ImmunebotsSetup::Type2Agent( int agentnum ) {
+	string agentpp = "";
+	switch (agentnum) {
+		case AbstractAgent::AGENT_CTL: 			agentpp = "CTL"; break;
+		case AbstractAgent::AGENT_SUSCEPTIBLE: 	agentpp = "Susceptible"; break;
+		case AbstractAgent::AGENT_VIRION: 		agentpp = "Virion"; break;
+		case AbstractAgent::AGENT_INFECTED: 	agentpp = "Infected"; break;
+		case AbstractAgent::AGENT_INFECTED_NOVIRIONS: agentpp = "InfectedNoVirions"; break;
+		default: cout << "[WARNING] Unable to parse agent number (" << agentnum << ") to anything meaningful!" << endl;
+	}
+	return(agentpp);
 }
 
 // Check to see if we have reached the end conditions specified in the setup
@@ -449,6 +470,15 @@ void ImmunebotsSetup::placeNonsusceptibleCells() {
 	int starty       = getParm("starty",100);
 	int cell_spacing = getParm("nc_cellspacing", 5);
 	int total_cells  = getParm("nc_totalcount", 10000);
+
+	// Check we can place this number of cells! Conservative check.
+	int cells_per_row      = floor(sqrt(total_cells)) + 1;
+	int max_cells_per_row  = ( conf::DefaultWidth - 20 ) / (2*conf::BOTRADIUS + cell_spacing);
+	if ( cells_per_row > max_cells_per_row ) {
+		cout << "ERROR: Too many cells are being placed. Max number of cells is: " << pow(max_cells_per_row,2) << endl;
+		cout << "Quitting program.." << endl;
+		exit(EXIT_SUCCESS);
+	}
 
 	if ( getParm("nc_squaregrid", 0) == 1 ) {
 		int squaroot = (int)(sqrt(total_cells));

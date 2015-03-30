@@ -56,6 +56,7 @@ private:
 	void handleEndCondition(std::string, std::string);
 
 	int Agent2Type( string );
+	string Type2Agent( int );
 
 	void placeNonsusceptibleCells();
 

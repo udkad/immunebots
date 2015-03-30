@@ -94,7 +94,7 @@ void World::setPatch(int x, int y) {
 	}
 }
 
-// Given a width and height, sets up the patch and cellshadow datat structures.
+// Given a width and height, sets up the patch and cellshadow data structures.
 // Note: everything in previous patch and cellshadow is overwritten.
 void World::setWorldDimensions(int w, int h) {
     for (int x=0;x<w;x++) {
@@ -454,7 +454,7 @@ int World::checkEvents(int t) {
 // Given an event, run it now! Should really be "event.activate()", but oh well.
 void World::activateEvent(Event *e) {
 
-	// 1. Figure out how many of the desired type (sually CTL or Infected) to add (either absolute or ratio)
+	// 1. Figure out how many of the desired type (usually CTL or Infected) to add (either absolute or ratio)
 	int number = 0;
 	int currentnumber = 0;
 
@@ -546,29 +546,30 @@ int World::getCurrentPopulation(int agent_type) {
 	int population = 0;
 
 	vector<Cell*>::iterator cit;
-	vector<AbstractAgent*>::iterator agent;
 
 	// Magic switch - treat infected as infected_novirions
-	if (ibs->getParm("ic_novirions", 0) & agent_type==AbstractAgent::AGENT_INFECTED) { agent_type = AbstractAgent::AGENT_INFECTED_NOVIRIONS; }
+	if ((ibs->getParm("ic_novirions", 0)) & (agent_type==AbstractAgent::AGENT_INFECTED)) { agent_type = AbstractAgent::AGENT_INFECTED_NOVIRIONS; }
 
 	switch (agent_type) {
 
 		// Fall through #1: The cells vector for all cells (Dead, NS, S and I)
+		// Note: This is VERY slow if the cell vector is huge (i.e. 100k).
 		case AbstractAgent::AGENT_DEADCELL:
 		case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:
-		case AbstractAgent::AGENT_INFECTED:
-		case AbstractAgent::AGENT_INFECTED_NOVIRIONS:
 			for ( cit = cells.begin(); cit != cells.end(); ++cit) {
 				if ( ((AbstractAgent*)(*cit))->getAgentType() == agent_type ) population++;
 			}
 			break;
 
-		// Fall through #2: The agents vector for ctl and virions
+		// Fall through #2: The agents vector for infecteds, ctl and virions
+		case AbstractAgent::AGENT_INFECTED:
+		case AbstractAgent::AGENT_INFECTED_NOVIRIONS:
 		case AbstractAgent::AGENT_CTL:
 		case AbstractAgent::AGENT_VIRION:
+			vector<AbstractAgent*>::iterator agent;
 			for ( agent = agents.begin(); agent != agents.end(); ++agent) {
 				// Increment the right counter
-				switch ( ((AbstractAgent*)(*agent))->getAgentType() == agent_type ) population++;
+				if ( ((AbstractAgent*)(*agent))->getAgentType() == agent_type ) population++;
 			}
 			break;
 	}
@@ -664,6 +665,23 @@ bool World::isOverCell(int x, int y) {
 
 Cell * World::getCell(int x, int y) {
 	return( CellShadow[x][y] );
+}
+
+// Finds the nearest Infected cell to the given coords.
+Cell * World::getNearestInfectedCell(int x, int y) {
+
+	Cell * closest_cell = 0;
+	float closest_distance = 1e10; // not true distance, but abs(x2-x1)+abs(y2-y1) <-- Manhattan distance?
+
+	// Step through the entire cells vector - ignore uninfected and dead cells
+	for (int i=0; i<(int)cells.size(); i++) {
+		if ( cells[i]->agent_type == AbstractAgent::AGENT_INFECTED || cells[i]->agent_type == AbstractAgent::AGENT_INFECTED_NOVIRIONS ) {
+			float this_distance = pow(cells[i]->pos.x - x,2) + pow(cells[i]->pos.y - y,2);
+			if (this_distance < closest_distance) { closest_cell = cells[i]; closest_distance = this_distance; }
+		}
+	}
+
+	return(closest_cell);
 }
 
 // If we click on a non-susceptible or susceptible cell, we infect it

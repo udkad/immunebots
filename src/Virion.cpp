@@ -71,12 +71,12 @@ void Virion::drawAgent(GLView * v) {
 		v->drawCircle(pos.x, pos.y, draw_priority, r, true);
 	}
 
-    	// This should be made optional. Draw green line from parent cell to virion.
-		glBegin(GL_LINES);
-		glColor3f(0,1,0);
-		glVertex2f(parentCell->pos.x,parentCell->pos.y);
-		glVertex2f(pos.x, pos.y);
-		glEnd();
+	// This should be made optional. Draw green line from parent cell to virion.
+	glBegin(GL_LINES);
+	glColor3f(0,1,0);
+	glVertex2f(parentCell->pos.x,parentCell->pos.y);
+	glVertex2f(pos.x, pos.y);
+	glEnd();
 
 #endif
 }

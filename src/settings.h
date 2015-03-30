@@ -5,8 +5,9 @@ namespace conf {
 
 	// Absolute maximum size of the world!
 	// Note: most of the time we'll be using a sub-set of this (see World::bounding_m{in,ax})
-    const int DefaultWidth  = 20200; // 20200*20200 allows placement of 1M cells.
-    const int DefaultHeight = 20200;
+	// 20200*20200 allows placement of 1M cells (>3Gb RAM). 6500*6500 allows placement of 100k cells (<0.5Gb RAM). Both at 10px spacing.
+    const int DefaultWidth  = 6500;
+    const int DefaultHeight = 6500;
     const int WWIDTH  = 1800;  // window width and height
     const int WHEIGHT = 1000;
 

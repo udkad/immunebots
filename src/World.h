@@ -86,6 +86,7 @@ public:
 
     bool isOverCell(int x, int y); // TODO: Make private?
     Cell * getCell(int x, int y);
+    Cell * getNearestInfectedCell(int x, int y);
     void toggleInfection(int x, int y);
     void infectCells(int total, bool onlySusceptible);
 
