@@ -36,17 +36,18 @@ public:
     virtual ~GLView();
 
     virtual void drawAgent(AbstractAgent*);
-    virtual void drawCell(const Cell &cell);
-    virtual void drawDot(int x, int y);
+    virtual void drawCell(Cell*);
+    virtual void drawDot(int x, int y, float z);
 
     void setWorld(World* w);
+    void setCamera(float,float,float);
 
     // Tw Tweak functions
     void createSetupMenu(bool visible);
     void createSimulationMenu(bool visible);
 
     // Returns the WorldSpace (Model) co-ords of the mouse position.
-    void getMouseWorldCoords(int, int, int, GLdouble*);
+    void getMouseWorldCoords(int x, int y, int z, GLdouble* ws);
 
     //GLUT functions
     void processNormalKeys(unsigned char key, int x, int y);
@@ -66,24 +67,38 @@ public:
 
     void toggleDrawing();
     void togglePaused();
+    void toggleStepMode(bool);
     void setPaused(bool p);
 
     // Drawing functions
-    void drawCircle(float x, float y, float r);
+    void drawCircle(float x, float y, float z, float r);
     void RenderString(float x, float y, void *font, const char* string, float r, float g, float b);
 
     /* TEST FUNCTIONS*/
     void drawProgressBar(float completed);
 
+	float currentWidth;
+	float currentHeight;
+
 private:
+
+    // Compiler needs to know the size of the Camera struct, so full definition goes here.
+    typedef struct {   /* Where da camera? */
+		double x, y, z;   /* 3-D coordinates (we don't need w here) */
+		float roll, pitch, heading;
+		float zoom;
+    } Camera;
 
     World *world;
     ImmunebotsSetup *ibs; // Our config/setup object
+    Camera *cam;
 
     bool dosimulation; // Starts off as false, when true THEN paused is enabled
     bool paused;
     bool draw;
     int skipdraw;
+    bool stepmode, doanotherstep;
+    bool sync_framerate;
     char buf[100];
     char buf2[10];
     int modcounter;
@@ -95,8 +110,6 @@ private:
 	int fastforwardtime;
 
 	/* Pan & mouse position info */
-	float xoffset;	// Determine if we have panned left/right (def is: 0)
-	float yoffset;
 	bool mousedownnomove;
 	int lastmousey; // Need to know the last place the mouse was panned from
 	int lastmousex;

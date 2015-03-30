@@ -57,6 +57,7 @@ private:
         ar & radius;
         ar & active;
         ar & drawable;
+        ar & draw_priority;
         ar & lifespan;
 
         ar & state;

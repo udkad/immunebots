@@ -174,6 +174,16 @@ void World::placeCells() {
 
 	int r = conf::BOTRADIUS;
 	cells.clear();
+	// Also clear the "infected" cells from the agents list
+	vector<AbstractAgent*>::iterator iter = agents.begin();
+	while ( iter != agents.end() ) {
+		if ( ((AbstractAgent*)(*iter))->getAgentType() == "Infected" ) {
+			iter = agents.erase(iter);
+		} else {
+			++iter;
+		}
+	}
+
 	resetBoundingBox(); // Bounding box may be determined by manually placed cells
 	// We therefore reset the bounding box (so it includes only the patches) and then re-place the cells.
 
@@ -607,12 +617,7 @@ void World::addAgent( AbstractAgent *a ) {
 
 
 void World::addCell(int x, int y) {
-	Cell * c = new Cell();
-	// Put at required location, if x==-1 then leave as is
-	if (x >= 0) {
-		c->pos.x = x;
-		c->pos.y = y;
-	}
+	Cell * c = new Cell(x,y);
 	// Check the bounding box
 	checkBoundingBox(c->pos.x,c->pos.y);
 	// Set probability that this cell is susceptible: Generate number between 0.00 and 100.00
@@ -754,55 +759,76 @@ bool World::isClosed() const {
     return CLOSED;
 }
 
-/* This gets called to draw the world (AIUI):
-    1. Draws the food layer, if required
-    2. Draws each agent in the agents vector
-   Note: The "world update" is handled by the GLUT Idle function, which calls GLView::handleIdle().
-   This, and also the GLUT display function, calls renderScene which calls World::draw().
- */
-
-
+/* This gets called to draw the background things of the world: bounding box, "worldspace" and patches (latter only if in setup mode) */
 void World::drawBackground(View* view, bool simulationmode) {
 
-	// Draw patches from patchV, but only if in setup mode
+	// 1. Draw the setup/simulaton specific stuff
+	// If in setup mode, draw the patches and entire worldspace (cyan)
+	// If in simulation mode, only draw the background of the bounding box (and not the whole matrix)
 	if ( !simulationmode ) {
+		// Setup mode
+		// a. Draw the worldspace in cyan
+		glBegin(GL_QUADS);
+		glColor4f(0.1,0.9,1.0,0.5);
+		glVertex3f(0,0,-conf::FAR_PLANE);
+		glVertex3f(0,conf::HEIGHT,-conf::FAR_PLANE);
+		glVertex3f(conf::WIDTH,conf::HEIGHT,-conf::FAR_PLANE);
+		glVertex3f(conf::WIDTH,0,-conf::FAR_PLANE);
+		glEnd();
+
+		// b. Draw the patches
 		for (int i=0; i<(int)patchV.size(); i++) {
-			view->drawDot( int(patchV[i]/conf::WIDTH), (patchV[i]%conf::WIDTH) );
+			view->drawDot( int(patchV[i]/conf::WIDTH), (patchV[i]%conf::WIDTH), (-conf::FAR_PLANE+1.0) );
 		}
+	} else {
+		// Simulation mode
+		// a. Draw the bounding box quad in cyan
+		glBegin(GL_QUADS);
+		glColor4f(0.1,0.9,1.0,0.5);
+		glVertex3f(bounding_min.x,bounding_min.y,-conf::FAR_PLANE);
+		glVertex3f(bounding_min.x,bounding_max.y,-conf::FAR_PLANE);
+		glVertex3f(bounding_max.x,bounding_max.y,-conf::FAR_PLANE);
+		glVertex3f(bounding_max.x,bounding_min.y,-conf::FAR_PLANE);
+		glEnd();
 	}
 
-	vector<Cell*>::const_iterator cit;
-	for ( cit = cells.begin(); cit != cells.end(); ++cit) {
-		view->drawCell(**cit);
-	}
-
-	// Draw the bounding box
-	if ( bounding_max.x != -1 ) {
+	// 2. Draw the bounding box outline
+	if ( bounding_max.x > 0 ) {
 		glBegin(GL_LINES);
 		glColor4f(0.5,0.5,0.5,0.5);
-		glVertex3f(bounding_min.x,bounding_min.y,0);
-		glVertex3f(bounding_max.x,bounding_min.y,0);
+		glVertex3f(bounding_min.x,bounding_min.y,-conf::FAR_PLANE+1.0);
+		glVertex3f(bounding_max.x,bounding_min.y,-conf::FAR_PLANE+1.0);
 
-		glVertex3f(bounding_max.x,bounding_min.y,0);
-		glVertex3f(bounding_max.x,bounding_max.y,0);
+		glVertex3f(bounding_max.x,bounding_min.y,-conf::FAR_PLANE+1.0);
+		glVertex3f(bounding_max.x,bounding_max.y,-conf::FAR_PLANE+1.0);
 
-		glVertex3f(bounding_max.x,bounding_max.y,0);
-		glVertex3f(bounding_min.x,bounding_max.y,0);
+		glVertex3f(bounding_max.x,bounding_max.y,-conf::FAR_PLANE+1.0);
+		glVertex3f(bounding_min.x,bounding_max.y,-conf::FAR_PLANE+1.0);
 
-		glVertex3f(bounding_min.x,bounding_max.y,0);
-		glVertex3f(bounding_min.x,bounding_min.y,0);
+		glVertex3f(bounding_min.x,bounding_max.y,-conf::FAR_PLANE+1.0);
+		glVertex3f(bounding_min.x,bounding_min.y,-conf::FAR_PLANE+1.0);
 		glEnd();
 	}
 }
 
 
 void World::drawForeground(View* view) {
+
+
+
+	// 2. Iterate through the CTL vector and draw each one
     vector<AbstractAgent*>::const_iterator ait;
     for ( ait = agents.begin(); ait != agents.end(); ++ait) {
     	// Only draws the agent if it's within the world bounding box
     	view->drawAgent(*ait); // note: this just calls ait->drawAgent(view);
         //(*ait)->drawAgent((GLView)view);	// Skip the middle man, if I can figure out how
     }
+
+	// 1. Iterate through the cells vector and draw each one
+	vector<Cell*>::iterator cit;
+	for ( cit = cells.begin(); cit != cells.end(); ++cit) {
+		view->drawCell(*cit);
+	}
 }
 
 int World::numAgents() const {
@@ -852,6 +878,7 @@ void World::saveLayout() {
 }
 
 // Will load a world setup from the given filename
+// Note: probably unecessary to pass in the view pointer, as view *calls* this function.
 void World::loadLayout() {
 
 	// Create a link to the setup file and read it the contents

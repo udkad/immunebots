@@ -27,6 +27,7 @@ class Cell: public AbstractAgent {
 public:
 	Cell();
 	Cell(int x, int y);
+	void init();
 	virtual ~Cell();
 
     // The following are AbstractAgent classes, which we make concrete in this class
@@ -39,6 +40,7 @@ public:
     // Variables to define the cell
     float radius;
 	int cType; 	// This is one of the CELL_ types (should enumerate?)
+	float lastScanTime; // last time this cell was scanned by CTL
 
 	void setCellType(int newType);
 
@@ -46,6 +48,7 @@ public:
 	void setInfected(bool isInfected);
 	void setSusceptible(float sp);
 	void setKilled();
+	void setScanTime(float wt);
 	void toggleInfection();
 	bool isInfected();
 	bool isSusceptible();
@@ -70,6 +73,7 @@ private:
 	/* Rate parameters, in seconds*/
 	float r_vproduction; // Rate of virion production
 	float r_death; // Infected cell death rate
+	int id;
 
 	// For serialisation:
     friend class boost::serialization::access;
@@ -77,12 +81,14 @@ private:
     void serialize(Archive & ar, const unsigned int version) {
     	ar & boost::serialization::base_object<AbstractAgent>(*this);
 
+		ar & id;
     	ar & pos;
         ar & angle;
         ar & speed;
         ar & radius;
         ar & active;
         ar & drawable;
+        ar & draw_priority;
         ar & lifespan;
 
         ar & cType;

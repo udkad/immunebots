@@ -20,8 +20,20 @@ using namespace std;
 
 BOOST_CLASS_EXPORT_GUID(Cell, "Cell");
 
-// These cells are AbstractAgents, even though they are only "active" if infected. They also don't move at all.
 Cell::Cell() {
+	init();
+}
+
+// These cells are AbstractAgents, even though they are only "active" if infected. They also don't move at all.
+Cell::Cell(int x, int y) {
+	init();
+	pos.x = x;
+	pos.y = y;
+}
+
+void Cell::init(){
+
+	id = rand();
 
 	// Cells have a position, and a speed
     pos   = Vector2f(randf(0,conf::WIDTH),randf(0,conf::HEIGHT));
@@ -31,6 +43,7 @@ Cell::Cell() {
     //nearestPatch = Vector2f(conf::WIDTH/2, conf::HEIGHT/2);
     radius = conf::BOTRADIUS;
     cType = CELL_NOT_SUSCEPTIBLE;
+    lastScanTime = 0.0;
 
     // Rates (in secs)
     // TODO: This should be set by the virion!
@@ -42,6 +55,8 @@ Cell::Cell() {
 
     // True by default: these cells do no move AND define the boundary box
     drawable = true;
+    draw_priority = 0.01; // low priority
+
     dead = false;
 
 }
@@ -52,6 +67,10 @@ Cell::~Cell() {}
 
 // Cells are not drawn using this function
 void Cell::drawAgent(GLView * v) {
+}
+
+void Cell::setScanTime(float wt) {
+	lastScanTime=wt;
 }
 
 // Infected cells take input, N and S do nothing

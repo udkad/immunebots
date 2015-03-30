@@ -30,6 +30,7 @@ Virion::Virion(Cell *pCell) {
 	currentCell = 0; // Although technically we're on the parent when we are created
 
 	drawable=true;
+	draw_priority = 2.0; // between ctl and cell priority (0.1 and 0.9 respectively)
 }
 
 Virion::~Virion() {
@@ -49,14 +50,14 @@ void Virion::drawAgent(GLView * v) {
 	// It still only infects if the center (pos.{x,y}) is over a susceptible cell.
 
 	// Draw a point or a line
-	bool drawPoint = true;
+	bool drawPoint = false;
 
 	if (drawPoint) {
 
 		// Draw a green dot
 		glBegin(GL_POINTS);
-		glColor3f(0.0,0.0f,0.0);
-		glVertex2f(pos.x,pos.y);
+		glColor3f(0.0,0.0,0.0);
+		glVertex3f(pos.x, pos.y, draw_priority);
 		glEnd();
 
 	} else {
@@ -65,7 +66,7 @@ void Virion::drawAgent(GLView * v) {
 		// 1. Draw the body (simple circle)
 		glBegin(GL_POLYGON);
 		glColor3f(0.0,1.0f,0.0);
-		v->drawCircle(pos.x, pos.y, r);
+		v->drawCircle(pos.x, pos.y, draw_priority, r);
 		glEnd();
 
 		// 2. Draw a black line around the circle
@@ -75,9 +76,9 @@ void Virion::drawAgent(GLView * v) {
 		float n;
 		for (int k=0;k<17;k++) {
 			n = k*(M_PI/8);
-			glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), 0);
+			glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), draw_priority+0.001);
 			n = (k+1)*(M_PI/8);
-			glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), 0);
+			glVertex3f(pos.x+r*sin(n), pos.y+r*cos(n), draw_priority+0.001);
 		}
 		glEnd();
 	}

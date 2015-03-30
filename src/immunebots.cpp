@@ -64,7 +64,7 @@ int main(int argc, char **argv) {
 
     //GLUT SETUP
     glutInit(&argc, argv); // GLUT will auto-recognise some arguments
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);// GLUT_DEPTH // GLUT_ALPHA?
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_ALPHA?
     glutInitWindowPosition(30,30);
     glutInitWindowSize(conf::WWIDTH,conf::WHEIGHT);
     glutCreateWindow("Immunebots");
@@ -77,7 +77,8 @@ int main(int argc, char **argv) {
     GLVIEW->createSimulationMenu(false); // Create menu now, but hide it until required.
 
     // Continue with rest of the GL initialisation
-    glClearColor(0.1,0.9,1.0,1.0);
+    //glClearColor(0.1,0.9,1.0,1.0); //cyan
+    glClearColor(1.0,1.0,1.0,1.0); // white
     glutDisplayFunc(gl_renderScene);
     glutIdleFunc(gl_handleIdle);
     glutReshapeFunc(gl_changeSize);

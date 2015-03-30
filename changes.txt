@@ -1,5 +1,9 @@
 == Changelog
 
+Version 1.0001a
+Backup date: 2011-08-29
+Minor changes - bug fixes, scantime added, better agent management and drawing code.
+
 Version 1.0001
 Backup date: 2011-08-26
 Added serialisation code (using Boost archive). More command line options, including "no draw" (-d), allow simulation to start automatically (-a "automatic run"), set run ID (-i IDNUMBER).

@@ -11,8 +11,8 @@ class View {
 public:
 
     virtual void drawAgent(AbstractAgent *) = 0;
-    virtual void drawCell(const Cell &cell) = 0;
-    virtual void drawDot(int x, int y) = 0;
+    virtual void drawCell(Cell *) = 0;
+    virtual void drawDot(int x, int y, float z) = 0;
 
     virtual void drawProgressBar(float completed) = 0;
 

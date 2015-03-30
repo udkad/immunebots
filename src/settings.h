@@ -10,12 +10,14 @@ namespace conf {
     const int WWIDTH  = 1800;  // window width and height
     const int WHEIGHT = 1000;
 
+    const float FAR_PLANE = 10.0; // The extent of the z-axis
+
     /* Set the (initial) colour of the different cells */
-    const float COLOUR_NOT_SUSCEPTIBLE[3]  = {1,1,1}; // white
-    const float COLOUR_SUSCEPTIBLE[3]      = {1,1,0}; // yellow
-    const float COLOUR_INFECTED[3]		   = {0,1,0}; // green
-    const float COLOUR_CTL[3]			   = {0,0,1}; // blue
-    const float COLOUR_DEAD[3]			   = {0.2,0.2,0.2}; // darkgray (black?)
+    const float COLOUR_NOT_SUSCEPTIBLE[4]  = {1,1,1,1}; // white
+    const float COLOUR_SUSCEPTIBLE[4]      = {1,1,0,1}; // yellow
+    const float COLOUR_INFECTED[4]		   = {0,1,0,1}; // green
+    const float COLOUR_CTL[4]			   = {0,0,1,1}; // blue
+    const float COLOUR_DEAD[4]			   = {0.2,0.2,0.2,1}; // darkgray (black?)
 
 	/* New configuration variables */
     const float SUSCEPTIBLE_PERCENTAGE    = 2.0f;

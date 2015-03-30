@@ -47,6 +47,7 @@ public:
 
 	virtual void drawAgent(GLView * const) {};
 	bool drawable;
+	float draw_priority; // If drawable, this needs to be set in the range 0-1, with 1 being high priority.
 
 	virtual void setInput(float, World* const) {};
 	virtual void doOutput(float, World* const) { cout << "\t"<<this<<" [doOutput not defined]";};
@@ -65,18 +66,7 @@ private:
 	// For serialisation:
     friend class boost::serialization::access;
     template<class Archive>
-    void serialize(Archive & ar, const unsigned int version) {
-    // TODO: This should not be commented out!! Yet crashed program without exception if included.
-/*
-    	ar & pos;
-        ar & angle;
-        ar & speed;
-        ar & radius;
-        ar & active;
-        ar & drawable;
-        ar & lifespan;
-*/
-    }
+    void serialize(Archive & ar, const unsigned int version) {}
 
 };
 

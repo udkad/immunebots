@@ -41,6 +41,7 @@ void CTL::init() {
     state = STATE_MOVE;
 
     drawable = true;
+    draw_priority = 0.8; // high priority
 }
 
 CTL::~CTL() {
@@ -56,8 +57,8 @@ void CTL::drawAgent(GLView * v) {
 
 	// 1. Draw the body (simple circle)
     glBegin(GL_POLYGON);
-    glColor3f(conf::COLOUR_CTL[0],conf::COLOUR_CTL[1],conf::COLOUR_CTL[2]);
-    v->drawCircle(pos.x, pos.y, radius);
+    glColor4f(conf::COLOUR_CTL[0],conf::COLOUR_CTL[1],conf::COLOUR_CTL[2], 1.0);
+    v->drawCircle(pos.x, pos.y, draw_priority, radius);
     glEnd();
 
     // 2. Show which state the CTL is in
@@ -79,6 +80,10 @@ void CTL::setInput(float dt, World * w) {
 	// Is the CTL over a cell?
 	if ( w->isOverCell(pos.x, pos.y) ) {
 		currentCell = w->getCell(pos.x, pos.y);
+		if (false && !currentCell->isDead()) {
+			currentCell->setKilled();
+			cout << "[CTL] fake-killing cell["<<currentCell<<"]\n";
+		}
 	}
 
 	if ( currentCell == 0 && state != STATE_MOVE ) {
@@ -98,6 +103,10 @@ void CTL::setInput(float dt, World * w) {
 	} else if ( state == STATE_SENSE ) {
 		// 1. Have we finished sensing the current cells? If so - start moving
 		timer -= dt;
+		if (currentCell != 0) {
+			currentCell->setScanTime(w->worldtime);
+		}
+
 		if (timer <= 0) {
 			if (currentCell!=0 && currentCell->isInfected()) {
 				// Start killing the cell

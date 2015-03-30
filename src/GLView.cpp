@@ -26,6 +26,7 @@
 
 using namespace std;
 
+/* GL handler functions */
 void gl_processNormalKeys(unsigned char key, int x, int y) {
     GLVIEW->processNormalKeys(key, x, y);
 }
@@ -58,22 +59,25 @@ void gl_renderScene() {
     GLVIEW->renderScene();
 }
 
+/* More GL functions */
 
 void GLView::RenderString(float x, float y, void *font, const char* string, float r, float g, float b) {
-    glColor3f(r,g,b);
+    glColor4f(r,g,b,1.0);
     glRasterPos2f(x, y);
     int len = (int) strlen(string);
     for (int i = 0; i < len; i++)
         glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, string[i]);
 }
 
-void GLView::drawCircle(float x, float y, float r) {
+void GLView::drawCircle(float x, float y, float z, float r) {
     float n;
     for (int k=0;k<17;k++) {
         n = k*(M_PI/8);
-        glVertex3f(x+r*sin(n),y+r*cos(n),0);
+        glVertex4f(x+r*sin(n),y+r*cos(n),z,1.0);
     }
 }
+
+/* TW Menu functions */
 
 // TW Callback function to reset the world
 void TW_CALL ResetWorld( void * world ) {
@@ -113,6 +117,20 @@ void TW_CALL LoadLayout( void * world ) {
 	// - calls loadLayout()
 	// - removes the loading screen
 	((World*)world)->loadLayout();
+	// Do we scale by Width (x) or Height (y)?
+	float bw = (((World*)world)->bounding_max.x-((World*)world)->bounding_min.x);
+	float bh = (((World*)world)->bounding_max.y-((World*)world)->bounding_min.y);
+	float zoom;
+	if (bw/GLVIEW->currentWidth > bh/GLVIEW->currentHeight) {
+		zoom = (GLVIEW->currentWidth-50.0)/bw;
+	} else {
+		zoom = (GLVIEW->currentHeight-50.0)/bh;
+	}
+
+	// Find centre of the bounding box
+	float tx = ((World*)world)->bounding_min.x + bw/2.0;
+	float ty = ((World*)world)->bounding_min.y + bh/2.0;
+	GLVIEW->setCamera( tx*zoom, ty*zoom, zoom );
 }
 
 void TW_CALL SwitchToSimulationMode( void * w ) {
@@ -138,6 +156,7 @@ void TW_CALL SwitchToSetupMode( void * w ) {
 void TW_CALL PauseContinueSimulation(void *) {
 	GLVIEW->togglePaused();
 }
+
 
 /*
  * MOUSE TW_CALLS - check if still relevant *
@@ -165,6 +184,7 @@ void TW_CALL GetMouseStatePlaceCTL(void *value, void *v) {
 	// This just casts the void pointers (if required) and sets the right MouseState to compare to.
 	GetMouseState(value, (GLView *)v, MOUSESTATE_PLACE_CTL);
 }
+
 
 // Function to set the new mouseState when the user toggles something
 void TW_CALL SetMouseState( bool SwitchedOn, GLView *view, int ms ) {
@@ -196,6 +216,7 @@ void TW_CALL CopyStdStringToClient(std::string& destinationClientString, const s
   destinationClientString = sourceLibraryString;
 }
 
+/* Create the TW menus */
 
 void GLView::createSetupMenu(bool visible) {
 
@@ -281,6 +302,9 @@ void GLView::createSimulationMenu(bool visible) {
 
 	TwAddButton(barsm, "pause_toggle", PauseContinueSimulation, NULL, " label='Start/Pause simulation' ");
 
+	TwAddVarRW(barsm, "togg_stepmode", TW_TYPE_BOOLCPP, (&stepmode), " label='Toggle stepmode' ");
+	TwAddVarRW(barsm, "togg_syncframerate", TW_TYPE_BOOLCPP, (&sync_framerate), " label='Limit simulation to 60CPS' ");
+
 	TwAddSeparator(barsm, NULL, NULL);
 
 	TwAddButton(barsm, "switchToSetup_button", SwitchToSetupMode, world, " label='Return to Setup Mode' ");
@@ -292,11 +316,17 @@ void GLView::createSimulationMenu(bool visible) {
 
 }
 
+
+/* Create the world */
+
 GLView::GLView(World *w, ImmunebotsSetup *is):
         dosimulation(false),
         paused(true),
         draw(true),
         skipdraw(1),
+        stepmode(false),
+        doanotherstep(false),
+        sync_framerate(false),
         modcounter(0),
         frames(0),
         idlecalled(0),
@@ -305,14 +335,22 @@ GLView::GLView(World *w, ImmunebotsSetup *is):
     	lastmousey(0),
     	lastmousex(0),
     	mousedownnomove(false),
-    	xoffset(0),
-    	yoffset(0),
     	scale(1.0),
 		processsetupevents(false),
 		fastforwardtime(0)
 {
 	world = w;
 	ibs   = is;
+
+	// Initialise the camera
+	cam = (Camera*) malloc( sizeof( Camera ) );
+	cam->x = 0.0;
+	cam->y = 0.0;
+	cam->z = 0.0;
+	cam->heading = 0.0;
+	cam->pitch = 0.0;
+	cam->roll = 0.0;
+	cam->zoom = 0.10;
 }
 
 GLView::~GLView() {
@@ -323,6 +361,7 @@ GLView::~GLView() {
 void GLView::switchToSimulationMode(bool dosim) {
 	dosimulation = dosim;
 	paused = true;
+	doanotherstep = true;
 }
 
 // Stupid accessor function for a Tw callback to get the current value of the mouse state
@@ -336,17 +375,18 @@ void GLView::setMouseState(int v) {
 }
 
 void GLView::changeSize(int w, int h) {
+	if (h==0) {h=1.0;} // Prevent divide by zero
+	currentWidth  = w;
+	currentHeight = h;
 
     // Reset the coordinate system before modifying
 	glViewport(0, 0, w, h);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0,w,h,0,0,1);
-    //glViewport(0, 0, w, h);
+    glOrtho( -w/2, w/2, h/2, -h/2, -conf::FAR_PLANE-1.0, conf::FAR_PLANE+1.0 );
 
 	// Inform Menubar (system) of the new window coordinates
     TwWindowSize(w, h);
-    //glutPostRedisplay();
 }
 
 // class UnderMousePredicate {
@@ -367,24 +407,26 @@ void GLView::changeSize(int w, int h) {
 
 
 /* Given a mouse cursor location ("WindowSpace"), translates into where in the model the mouse cursor is pointing ("WorldSpace") */
-void GLView::getMouseWorldCoords(int x, int y, int z, GLdouble* WS) {
+void GLView::getMouseWorldCoords(int x, int y, int z, GLdouble* ws) {
 
 	/* Complicated code to translate the mouse position into a world co-ord */
 	GLdouble mvmatrix[16];
 	GLdouble projmatrix[16];
 	GLint viewport[4];
-	//vector<double> WorldSpace[3];
 
 	// Get the matrices
 	glGetDoublev(  GL_MODELVIEW_MATRIX,  mvmatrix   );
 	glGetDoublev(  GL_PROJECTION_MATRIX, projmatrix );
 	glGetIntegerv( GL_VIEWPORT,          viewport   );
 
-	gluUnProject(x,y,z,
+	gluUnProject(x,y,1.0,
 			mvmatrix,projmatrix,viewport,
-			WS,WS+1,WS+2
+			ws, ws+1, ws+2
 	);
 
+	// Correct for camera zoom and position
+	*(ws+0) = ((cam->x+*(ws+0))/cam->zoom);
+	*(ws+1) = ((cam->y-*(ws+1))/cam->zoom);
 }
 
 // Catch mouse clicks
@@ -409,19 +451,27 @@ void GLView::processMouse(int button, int state, int x, int y) {
 					GLdouble ws[3] = {0,0,0};
 					this->getMouseWorldCoords(x, y, 0, ws);
 
-					cout << "[PM] Window: ("<<x<<","<<y<<"); UlrichWorld: ("<< x+xoffset<<","<< y+yoffset<<"); Unproject: ("<< ws[0] <<","<< ws[1] <<")\n";
+					if ( !dosimulation ) {
 
+						if (mouseState == MOUSESTATE_PLACE_CELL) {
+							//cout << "In Mouse state " << mouseState << ": button went " << state << "\n";
+							world->addCell(floor(ws[0]),floor(ws[1]));
+						} else if (mouseState == MOUSESTATE_INFECT_CELL) {
+							// We may have panned left/right, so add the offset to the reported mouse position
+							world->toggleInfection(floor(ws[0]),floor(ws[1]));
+						} else if (mouseState == MOUSESTATE_PLACE_CTL) {
+							// We may have panned left/right, so add the offset to the reported mouse position
+							world->addCTL(floor(ws[0]),floor(ws[1]));
+						}
 
-					if (mouseState == MOUSESTATE_PLACE_CELL) {
-						//cout << "In Mouse state " << mouseState << ": button went " << state << "\n";
-						world->addCell(x+xoffset,y+yoffset);
-					} else if (mouseState == MOUSESTATE_INFECT_CELL) {
-						// We may have panned left/right, so add the offset to the reported mouse position
-						world->toggleInfection(x+xoffset,y+yoffset);
-					} else if (mouseState == MOUSESTATE_PLACE_CTL) {
-						// We may have panned left/right, so add the offset to the reported mouse position
-						world->addCTL(x+xoffset,y+yoffset);
+					} else { // End of !dosimulation
+						// In Simulation mode
+						if (world->isOverCell(ws[0],ws[1])) {
+							Cell * c = world->getCell(ws[0],ws[1]);
+							cout << "[MP] Picked cell["<<c<<"] - "<<c->lastScanTime<<"s ("<<(c->cType)<<")\n";
+						}
 					}
+
 				} // Else: Do nothing
 				mousedownnomove = false;
 			}
@@ -430,22 +480,23 @@ void GLView::processMouse(int button, int state, int x, int y) {
 
 		// SETUP MODE ONLY:
 		// - Only zoom in/out in simulation mode - causes too many problems in setup mode
-		if ( dosimulation ) {
+		//if ( dosimulation ) {
 			// WHEEL UP
 			if (button == 3) {
 				// Zoom in. Wheel is 3 and 4: N.B probably system-specific
-				scale += scale*0.05;
+				cam->zoom *= 1.05;
 				lastmousex = x;
 				lastmousey = y;
 			// WHEEL DOWN
 			} else if (button == 4) {
 				// Zoom out. Wheel is 3 and 4: N.B probably system-specific
-				scale -= scale*0.05;
-				if (scale<0.001) scale = 0.001; // Don't scale less than 1/1000th
+				cam->zoom *= 0.95;
+				//if (cam->zoom<0.001) cam->zoom = 0.001; // Don't scale less than 1/1000th
 				lastmousex = x;
 				lastmousey = y;
 			}
-		}
+			//cout << "[PM] zoom is "<< cam->zoom << " @("<<cam->x<<","<<cam->y<<"), bb is("<<world->bounding_max.x-world->bounding_min.x<<","<<world->bounding_max.y-world->bounding_min.y<<")"<<endl;
+		//}
 
 	}
 }
@@ -462,24 +513,28 @@ void GLView::processMouseActiveMotion(int x, int y) {
 	if (!dosimulation) {
 		// Moving whilst left button is held down depends on the current mouseState
 		if (mouseState == MOUSESTATE_DRAW_PATCH) {
+
+			GLdouble ws[3] = {0,0,0};
+			this->getMouseWorldCoords(x, y, 0, ws);
+
 			// We may have panned left/right, so add the offset to the reported mouse position
-			world->setPatch(x+xoffset,y+yoffset);
+			world->setPatch(floor(*ws),floor(*(ws+1)));
 		//} else if (mouseState == MOUSESTATE_PLACE_CELL) {
 			// We may have panned left/right, so add the offset to the reported mouse position
 			//drawCircle(x+xoffset,y+yoffset,10);
 		} else {
 			// Pan left/right
-			xoffset += (lastmousex-x);
-			yoffset += (lastmousey-y);
+			cam->x += (lastmousex-x);
+			cam->y += (lastmousey-y);
 			lastmousex = x;
 			lastmousey = y;
 		}
 	}
 
 	if (dosimulation) {
-		// At the moment, just pan left/right
-		xoffset += (lastmousex-x);
-		yoffset += (lastmousey-y);
+		// Currently we just pan left/right
+		cam->x += (lastmousex-x);
+		cam->y += (lastmousey-y);
 		lastmousex = x;
 		lastmousey = y;
 	}
@@ -510,9 +565,10 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
 
 	// Reset view
     if (key=='r') {
-   		scale   = 1.0;
-   		xoffset = 0.0;
-   		yoffset = 0.0;
+   		cam->zoom = 1.0;
+   		cam->x    = 0.0;
+   		cam->y    = 0.0;
+   		cam->z    = 0.0;
     }
 
     // Drawing toggle
@@ -538,12 +594,18 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
 		if (key=='p') {
 			//pause
 			paused = !paused;
-		} else if (key==43) {
+		} else if (key==32) {
+			// space (step) do one iteration then pause until space is pressed again
+			this->toggleStepMode(true);
+		}  else if (key==43) {
 			//+
 			skipdraw++;
 		} else if (key==45) {
 			//-
 			skipdraw--;
+		} else if (key=='s') {
+			// "Slow": Cheap way to limit the simulation speed to the max framerate
+			sync_framerate = !sync_framerate;
 		} else {
 	        printf("Unknown key pressed: %i\n", key);
 	    }
@@ -554,7 +616,8 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
 
 void GLView::processSpecialKeys(int key, int x, int y) {
 
-	// Should first send to Tw, but there is nothing which is triggered by a "special key"
+	if ( TwEventKeyboardGLUT(key,x,y) ) return;
+
 	// From API: The special keyboard callback is triggered	when keyboard function or directional keys are pressed.
 
 	// SIMULATION
@@ -581,7 +644,7 @@ void GLView::processSpecialKeys(int key, int x, int y) {
 void GLView::handleIdle() {
 
 	// Call this the very first time we render the scene
-	//if (!processsetupevents) automaticEventSetup();
+	if (!processsetupevents) automaticEventSetup();
 
     // Check if we have reached the end of the simulation
 	if ( dosimulation && !paused && world->getWorldTime() >= ibs->endTime ) {
@@ -614,7 +677,12 @@ void GLView::handleIdle() {
     idlecalled++;
 
     // Only update the world is we're in simulation mode and the simulation isn't paused.
-    if (dosimulation && !paused) world->update();
+    if (dosimulation && !paused && (!stepmode || doanotherstep)) {
+    	world->update();
+    	if (stepmode) {
+    		doanotherstep = false;
+    	}
+    }
 
     // Check if we are in FF mode and have hit the required world time
     if ( fastforwardtime > 0 && world->getWorldTime() >= fastforwardtime ) {
@@ -662,6 +730,18 @@ void GLView::handleIdle() {
 void GLView::automaticEventSetup() {
 
 	cout << "[GLView] Automatic Events Setting Up..\n";
+
+	for (int i=0; i<100; i+=10) {
+		for (int j=0; j<100; j+=10) {
+			world->addCell(i,j);
+		}
+	}
+	world->addCell( 90,100);
+	world->addCell(100, 90);
+
+
+
+	/*
 	// On start (first processIdle call), do the following: load the set up file, switch to sim mode, start the sim
 	world->loadLayout();
 
@@ -675,9 +755,12 @@ void GLView::automaticEventSetup() {
 
 	SwitchToSimulationMode( world );
 	GLVIEW->togglePaused();
-	processsetupevents = true;
+	*/
 
+	// Always do this
+	processsetupevents = true;
 	cout << "[GLView] Automatic Events Completed.\n";
+
 }
 
 void GLView::renderScene() {
@@ -685,23 +768,29 @@ void GLView::renderScene() {
 	frames++;
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	glDepthFunc(GL_LESS);
+	glEnable(GL_DEPTH_TEST);
+
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
+    glPushMatrix();
+
+    // 1. Put the "camera" in thte right place for all actions
+	glRotatef(-cam->roll,    0, 0, 1);
+	glRotatef(-cam->pitch,   1, 0, 0);
+	glRotatef(-cam->heading, 0, 1, 0);
+	glTranslatef(-cam->x, -cam->y, -cam->z);
+	glScalef(cam->zoom, cam->zoom, 1.0);
 
     glPushMatrix();
 
-	// Global translate (from holding the mouse down and moving)
-    glTranslatef(-xoffset,-yoffset,0);
-
-    // Can't get scaling to work properly
-    glScalef(scale, scale, scale);
-
     // Draw the world
     if (draw) {
-		// Draw background: patches (only if in setup mode), and cells.
+		// Draw background - world colour, bounding box and patches (if in setup mode)
 		world->drawBackground(this, dosimulation);
 
-		// Add on the active agents
+		// Add on the cells and active agents (CTL/virions/etc).
 		world->drawForeground(this);
     }
 
@@ -710,8 +799,12 @@ void GLView::renderScene() {
 
     glPopMatrix();
 
+    glPopMatrix();
     glutSwapBuffers();
-	//glutPostRedisplay(); // Uncommenting this limits the FPS and CPS to 60.
+
+    if (sync_framerate) {
+    	glutPostRedisplay(); // Uncommenting this limits the FPS and CPS to 60.
+    }
 }
 
 void GLView::drawAgent(AbstractAgent* a) {
@@ -892,16 +985,29 @@ void GLView::drawAgent(const Agent& agent) {
 }
 */
 
-void GLView::drawCell(const Cell &cell) {
+void GLView::drawCell(Cell *cell) {
 	// Useful variables
 	float n;
-	float r = cell.radius;
-	float * cColor = world->getCellColourFromType(cell.cType);
+	float r = cell->radius;
+	//float *cColor;// = world->getCellColourFromType(cell->cType);
 
 	// 1. Draw the body (simple circle)
     glBegin(GL_POLYGON);
-    glColor3f(cColor[0],cColor[1],cColor[2]);
-    drawCircle(cell.pos.x, cell.pos.y, r);
+	// Special colour for uninfected cells)
+	if ((cell->cType == Cell::CELL_NOT_SUSCEPTIBLE) && (cell->lastScanTime>1.0)) {
+		// Create a blueish colour based on the last cell type
+		float decayFactor = 12*60*60; // Decay in 12h
+		float timeSinceScan = world->worldtime - cell->lastScanTime + 1.0/decayFactor;
+		// Now interpolate between verylightblue (200,200,220) and mediumblue (70,70,170)
+		glColor4f(
+			( 70.0+(60.0*timeSinceScan/decayFactor))/255.0,
+			( 70.0+(60.0*timeSinceScan/decayFactor))/255.0,
+			(170.0+(25.0*timeSinceScan/decayFactor))/255.0,
+			 1.0);
+	} else {
+		glColor4fv( world->getCellColourFromType(cell->cType) );
+	}
+    drawCircle(cell->pos.x, cell->pos.y, cell->draw_priority, r);
     glEnd();
 
     // 2. Draw a black line around the circle
@@ -910,17 +1016,17 @@ void GLView::drawCell(const Cell &cell) {
     // Draw outline as set of 16 lines around the circumference
     for (int k=0;k<17;k++) {
         n = k*(M_PI/8);
-        glVertex3f(cell.pos.x+r*sin(n), cell.pos.y+r*cos(n),0);
+        glVertex3f(cell->pos.x+r*sin(n), cell->pos.y+r*cos(n),cell->draw_priority+0.001);
         n = (k+1)*(M_PI/8);
-        glVertex3f(cell.pos.x+r*sin(n), cell.pos.y+r*cos(n),0);
+        glVertex3f(cell->pos.x+r*sin(n), cell->pos.y+r*cos(n),cell->draw_priority+0.001);
     }
     glEnd();
 
     // Display cell type, if debug is on
     // TODO: Add debug bool to switch on/off cell loc information?
     if (false) {
-    	sprintf(buf2, "%i", cell.cType);
-    	RenderString(cell.pos.x-conf::BOTRADIUS*1.5, cell.pos.y+conf::BOTRADIUS*1.8+5, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
+    	sprintf(buf2, "%i", cell->cType);
+    	RenderString(cell->pos.x-conf::BOTRADIUS*1.5, cell->pos.y+conf::BOTRADIUS*1.8+5, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
     	//sprintf(buf2, "(%.0f,%.0f)", cell.pos.x, cell.pos.y);
     	//RenderString(cell.pos.x-conf::BOTRADIUS*1.5, cell.pos.y+conf::BOTRADIUS*1.8+15, GLUT_BITMAP_TIMES_ROMAN_24, buf2, 0.0f, 0.0f, 0.0f);
     }
@@ -988,19 +1094,39 @@ void GLView::togglePaused() {
 	paused = !paused;
 }
 
+void GLView::toggleStepMode(bool onoff) {
+
+	if (onoff) {
+		if (!stepmode) {
+			stepmode = true;
+			doanotherstep = false;
+		} else {
+			doanotherstep = true;
+		}
+	}
+}
+
 void GLView::setPaused(bool p) {
 	paused = p;
 }
 
-
-void GLView::drawDot(int x, int y) {
+void GLView::drawDot(int x, int y, float z) {
 	// Draw the user-specified patch
     glBegin(GL_POINTS);
     glColor3f(0.5,0.5,0.5);
-	glVertex2f(x,y);
+	glVertex3f(x,y,z);
     glEnd();
 }
 
 void GLView::setWorld(World* w) {
     world = w;
 }
+
+void GLView::setCamera(float tx, float ty, float z) {
+	cam->x = tx;
+	cam->y = ty;
+	cam->zoom = z;
+}
+
+
+
