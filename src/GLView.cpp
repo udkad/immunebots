@@ -752,7 +752,7 @@ void GLView::handleIdle() {
     }
 
 	// Update stats and write-out report every 300 timesteps (i.e. every 5 minutes)
-	if (modcounter%ibs->getParm("report_time",300)==0) {
+	if (!paused && modcounter%ibs->getParm("report_time",300)==0) {
 		world->updateStats(false);
 	}
 

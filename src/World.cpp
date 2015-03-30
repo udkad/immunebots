@@ -26,6 +26,10 @@
 
 using namespace std;
 
+static bool sortEvents( Event first, Event second ) {
+	return( first.time < second.time );
+}
+
 World::World(  ) {
 	worldtime = 0.0;
 
@@ -55,18 +59,18 @@ World::World(  ) {
 
     // Initialise the boundary box (to very wrong numbers)
     resetBoundingBox();
-
- }
+}
 
 void World::setImmunebotsSetup(ImmunebotsSetup* is) {
 	ibs = is;
 }
 
 World::~World() {
-	cout << "Destroying a world. Bye bye\n";
+	cout << "Destroying a world. Bye bye.\n";
 }
 
 // Horrible clunky solution: copies all values from Conf to the World colour "store"
+// Also somewhat deprecated. Not sure this works anymore.
 void World::resetCellColours() {
 	copyColourArray(COLOUR_NOT_SUSCEPTIBLE, conf::COLOUR_NOT_SUSCEPTIBLE);
 	copyColourArray(COLOUR_SUSCEPTIBLE, 	conf::COLOUR_SUSCEPTIBLE);
@@ -157,7 +161,23 @@ void World::update(bool writeReport) {
 	float timestep = 1.0;
 	worldtime += timestep;
 
-	// TODO: 2. Process events for this timestep in the (currently non-existent) EventsQueue
+	// 2. Process events for this timestep in the EventsList
+	int events = checkEvents(worldtime);
+	bool doReSort = false;
+	while (events>0) {
+		// Get current Event, activate and remove from list! If persistent, stick on BACK of list.
+		Event currentEvent = EventsList.front();
+		activateEvent(&currentEvent);
+		EventsList.pop_front();
+		// If the current event has not been "fired", then add to back of the list and re-sort later.
+		if (!currentEvent.fired) {
+			EventsList.push_back( currentEvent );
+			doReSort = true;
+		}
+		events--;
+	}
+	// Will be true if we stick an event at the end of the events queue
+	if (doReSort) { EventsList.sort(sortEvents); }
 
     // 3. Give input to every agent
     setInputs(timestep);
@@ -380,6 +400,80 @@ void World::addCTL(int x, int y) {
 	// Add the CTL cell at the required place
 	CTL *ctl = new CTL(x,y, ibs);
 	this->addAgent( ctl );
+}
+
+void World::addEvent(Event e) {
+	EventsList.push_back(e);
+	EventsList.sort( sortEvents );
+
+	// Print it out
+	cout << " - adding ";
+	e.prettyprint();
+	cout << endl;
+}
+
+// Given a time, return the number of events hanging on that time
+int World::checkEvents(int t) {
+	int numEvents = 0;
+	list<Event>::iterator it;
+	for ( it = EventsList.begin(); it != EventsList.end(); it++ ) {
+		if ( (*it).time <= t ) {
+			numEvents++;
+		} else {
+			// First element happens after t, so break and return 0
+			break;
+		}
+	}
+	return numEvents;
+}
+
+// Given an event, run it now! Should really be "event.activate()", but oh well.
+void World::activateEvent(Event *e) {
+	// 1. Figure out how many to add (either absolute or ratio)
+	int number = 0;
+
+	switch (e->event) {
+		case EVENTSLIST_ADDETRATIO:
+			// E:T depends on the number of Infected cells
+			this->updateStats(false); // force update
+			number = floor(stats->infected * e->number + 0.5); // Get ratio and round to nearest whole int
+			break;
+		case EVENTSLIST_ADDABSOLUTE:
+			number = floor(e->number);
+			break;
+		case EVENTSLIST_ADDWHEN:
+			// This only activates if the condition is true (usually "Infected cell count is x")
+			// Return if the condition is reached, else continue, drop the required number of agents and mark event as fired.
+			switch (e->condition_type) {
+				case AbstractAgent::AGENT_CTL: 					if (stats->ctl            < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_INFECTED:				if (stats->infected       < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_INFECTED_NOVIRIONS:	if (stats->infected       < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:		if (stats->notsusceptible < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_SUSCEPTIBLE:			if (stats->susceptible    < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_VIRION:				if (stats->virion         < e->condition_number) {return;} else {break;}
+			}
+			number = floor(e->number);
+			break;
+	}
+
+	// 2. Add X of the appropriate type
+	switch (e->agent) {
+		case AbstractAgent::AGENT_CTL:
+			this->dropCTL(number);
+			break;
+		case AbstractAgent::AGENT_SUSCEPTIBLE:
+			cout << "Add susceptible cells doesn't currently work! Fix this!" << endl;
+			break;
+	}
+
+	// If we've reached here then the event has been activated.
+	e->fired = true;
+
+	// Print it out..
+	cout << " - Activating ";
+	e->prettyprint();
+	cout << endl;
+
 }
 
 void World::resetShadowLayer() {

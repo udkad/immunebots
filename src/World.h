@@ -6,6 +6,7 @@
 #include "vmath.h"
 
 #include <vector>
+#include <list>
 #include <string>
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
@@ -25,11 +26,16 @@ class World {
 
 public:
 
-	// Events
+	// Events which are triggered by agents
 	const static int EVENT_INFECTEDDEATH_LYSIS 	= 1;
 	const static int EVENT_INFECTEDDEATH_VIRUS 	= 2;
 	const static int EVENT_FAILEDINFECTION	   	= 3;
 	const static int EVENT_CTL_SCANCOMPLETE		= 4;
+
+	// Events specified in the configfile which take place at a future time..
+	const static int EVENTSLIST_ADDETRATIO  = 1;
+	const static int EVENTSLIST_ADDABSOLUTE = 2;
+	const static int EVENTSLIST_ADDWHEN     = 3;
 
     World();
     ~World();
@@ -91,6 +97,9 @@ public:
     void dropCTL();
     void dropCTL(int);
 
+    /* Adding events to the EventsList */
+    void addEvent(Event);
+
     /* Save information to file */
     void saveLayout();
     void loadLayout();
@@ -99,7 +108,7 @@ public:
     Vector2<int> bounding_min;
     Vector2<int> bounding_max;
 
-    Statistics * stats;
+    Statistics * stats; // Statistics is defined in helpers.h (weird location, but widely shared)
     void updateStats(bool);
     void EventReporter(int);
 
@@ -120,6 +129,11 @@ private:
     std::vector<AbstractAgent*> agents;
 
     std::vector<Cell*> cells;
+
+    // The Event struct is defined in helpers.h. I know, it's stupid, but follows the Statistics struct predecent.
+    std::list<Event> EventsList;
+    int  checkEvents(int);
+    void activateEvent(Event*);
 
     void copyColourArray(float wc[], const float cc[]);
 

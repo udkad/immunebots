@@ -1,5 +1,9 @@
 == Changelog
 
+Version 1.0004
+Backup date: 2011-10-25
+Addition of the EventsList, i.e. adding of CTL at ratio E:T at a future time (as mentioned in v1.0001c). Random seed taken from /dev/urandom (linux only) instead of time(0).
+
 Version 1.0002
 Backup date: 2011-10-05
 Added IMMUNEBOTS_NOSERIALISATION preprocessor directive to make Boost Archive optional. CTL check at 9 locations (center, and then 8 points on their border) for cells to scan. Improved checking if a CTL is on top of a cell (with the 'cellshadow' system). New Stats keyword for setup files to output gross numbers of agent numbers at regular intervals.

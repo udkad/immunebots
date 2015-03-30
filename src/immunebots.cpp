@@ -33,7 +33,18 @@ void printHelp();
 
 int main(int argc, char **argv) {
 
-	float version = 1.0002;
+	float version = 1.0004;
+
+	/*
+	 * Version differences (v brief):
+	 *
+	 *  1.0001: First "mature" release.
+	 *  1.0002: Support for compiler directives for NO_SERIALISATION and NO_GL (i.e. headless run).
+	 *  		Also static linking to the boost libraries (default).
+	 *  1.0003: Addition of the EventsList, i.e. adding of CTL at ratio E:T at a future time.
+	 *  1.0004: Random seed taken from /dev/urandom [linux only] instead of time(0).
+	 *
+	 */
 
 
 	cout <<"  _                                            _             _        " << endl;
@@ -53,7 +64,14 @@ int main(int argc, char **argv) {
 	cout << "                        ~ with OpenGL flavour ~" << endl << endl;
 #endif
 
-    srand(time(0));
+	// Get a random integer from /dev/urandom (the system's entropy pool).
+	// Note: We cannot use time(0) as this program might be run at the same second on the same multi-node cluster machine.
+	unsigned int seed;
+	ifstream urandom("/dev/urandom");
+	urandom.read(reinterpret_cast<char*>(&seed), sizeof(seed));
+	urandom.close();
+	srand(seed);
+	cout << "Random seed (from /dev/urandom): " << seed << endl << endl;
 
     ImmunebotsSetup *is = new ImmunebotsSetup();
     World *world = new World();

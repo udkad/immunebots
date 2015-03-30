@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <vector>
+#include <iostream>
 
 using namespace std;
 
@@ -26,6 +27,36 @@ typedef struct {   /* Our stats module - gets updated every second */
 	int lastCalled;
 	float scan_average;
 } Statistics;
+
+// This is an Event which happens in the future, it is held on the World::EventsList.
+typedef struct {    /* Initialised with a setup line such as: "Event AddAbsolute 100CTL@1d" */
+	int event;		/* Event type: add E:T ratio (EVENTSLIST_ETRATIO) or absolute number (EVENTSLIST_ADD) */
+	float number;	/* Number of Agents to add */
+	int agent;  	/* Agent type; uses AbstractAgent::AGENT_* numbering */
+	int time; 		/* Time (actually minimum time) when the event triggers. Time of 0 = activated every second (until activated=true). */
+	string agentpp; /* Pretty name for the agent, e.g. "CTL" instead of "ctl" or 4 */
+
+	/* Extra variables for the AddWhen condition */
+	int condition_number;
+	int condition_type;
+
+	/* Extra variables for persistent events */
+	bool fired;
+
+	// Don't like this, would rather overload "<<" and call "cout << EventE << endl" instead.
+	// Don't know how to do that though.
+	void prettyprint() {
+	        cout << "Event: Add " << number;
+	        if (event!=2) { cout << " (E:T)"; } // Bad! Hardcoded this value :/
+	        cout << " agents of type '" << agentpp << "' when ";
+	        if (event == 1 || event == 2) {
+				cout << "time is "<<time<<"s";
+	        } else if (event == 3) {
+	        	cout << "there are " << condition_number << " of type " << condition_type;
+	        }
+	}
+
+} Event;
 
 //uniform random in [a,b)
 inline float randf(float a, float b){return ((b-a)*((float)rand()/RAND_MAX))+a;}

@@ -50,8 +50,11 @@ private:
 
 	int getTimeInSeconds(const char*);
 
+	void handleEvents(std::string, std::string);
 	void handleCommands(std::string, std::string);
 	void handleEndCondition(std::string, std::string);
+
+	int Agent2Type( string );
 
 	void placeNonsusceptibleCells();
 

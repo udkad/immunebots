@@ -63,7 +63,7 @@ void ImmunebotsSetup::processSetupFile() {
 	// Note: 2-args and 3-args now work with comments at the end of the line, eg. "CTL r_lysis 0.001 #arbitrary value"
 	boost::regex re2("\\s*([^#][^\\s]+)\\s+([^\\s#]+)(\\s*#.*)?", boost::regex::perl|boost::regex::icase);
 	boost::regex re3("\\s*([^#][^\\s]+)\\s+([^\\s]+)\\s+([^#]*?[^#\\s])(\\s*#.*)?", boost::regex::perl|boost::regex::icase);
-	boost::regex reC("\\s*#.+", boost::regex::perl|boost::regex::icase);
+	boost::regex reC("\\s*#.*", boost::regex::perl|boost::regex::icase);
 	boost::regex reS("\\s*", boost::regex::perl|boost::regex::icase);
 	boost::cmatch ma;
 
@@ -105,7 +105,7 @@ void ImmunebotsSetup::processSetupFile() {
 			} else if (boost::iequals(keyword, "reportoverwrite")) {
 				setParm("report_overwrite",atoi(value.c_str()));
 			} else if ( keyword.at(0) == '!' )  {
-				// Handle the commands (all start with '!', e.g. !PLACE)
+				// Handle the commands (all start with '!', e.g. !PLACE or !ADD)
 				handleCommands(keyword, value);
 			} else {
 				cout << "WARNING: Unrecognised line in setupfile (ignoring..): " << line << endl;
@@ -128,6 +128,8 @@ void ImmunebotsSetup::processSetupFile() {
 			} else if (boost::iequals(keyword, "EndCondition")) {
 				// Set up the end conditions, eg. endtime, or when a cell-count reaches a certain %/number
 				handleEndCondition(pname, pval);
+			} else if (boost::iequals(keyword, "Event")) {
+				handleEvents( pname, pval );
 			} else {
 				// Handle Nonsusceptible/Susceptible/Infected/CTL keywords
 				boost::to_lower(pname);
@@ -254,7 +256,7 @@ void ImmunebotsSetup::handleEndCondition(string key, string value) {
 
 void ImmunebotsSetup::handleCommands(std::string command, std::string value) {
 
-	if (boost::iequals(command, "!place")) {
+	if (boost::iequals(command, "!PLACE")) {
 		// Can place: non-susceptible, infected, ctl
 		if (boost::iequals(value,"nonsusceptible")){
 			// Place non-susceptible (and by extension, susceptible cells) according to parms already set.
@@ -269,6 +271,90 @@ void ImmunebotsSetup::handleCommands(std::string command, std::string value) {
 			cout << " - Placing "<< getParm("ctl_totalcount",0) << " CTL" << endl;
 		}
 	}
+
+}
+
+// Handler for "Event AddAbsolute 50CTL@5d" config files
+void ImmunebotsSetup::handleEvents( std::string type, std::string value ) {
+
+	Event e;
+	// Standard inits:
+	e.fired = false;
+
+	/* ADD E:T RATIO, ADD ABSOLUTE, ADD WHEN */
+
+	if ( boost::iequals(type, "addetratio") || boost::iequals(type, "etratio") ) {
+		// This is an event which will trigger in the future. E:T CTL will be added at time t
+		e.event = World::EVENTSLIST_ADDETRATIO;
+		//world->addEvent(World::EVENTSLIST_ADDETRATIO, value);
+	} else if ( boost::iequals(type, "addabsolute") || boost::iequals(type, "add") ) {
+		// This is an event which will trigger in the future. X CTL will be added at time t
+		e.event = World::EVENTSLIST_ADDABSOLUTE;
+		//world->addEvent(World::EVENTSLIST_ADDABSOLUTE, value);
+	} else if ( boost::iequals(type, "addwhen") ) {
+		// specialised add: Event AddWhen 10CTL@100Infected => add 10 CTL when Infected count is 100.
+		e.event = World::EVENTSLIST_ADDWHEN;
+	}
+
+	// Start decoding the value string, syntax is "5CTL@8d" =~ /([\d.]+)([^@]+)@(.+)/i
+	boost::regex eventstr("\\s*([\\d.]+)([^@]+)@(.+)(\\s*#.*)?", boost::regex::perl|boost::regex::icase);
+	boost::cmatch em;
+
+	if ( boost::regex_match(value.c_str(), em, eventstr) ) {
+
+		// Number is easy - just turn string into char[] and then convert to float.
+		e.number  = atof( string(em[1].first, em[1].second).c_str() );
+
+		// Agent is harder - need to match to an AbstractAgent::AGENT_*.
+		e.agentpp = string(em[2].first, em[2].second);
+		e.agent   = Agent2Type( e.agentpp );
+
+		string trigger = string(em[3].first, em[3].second);
+		// After the '@' is either a TIME or an Infected Cell Count, e.g. '@5d' or '@100Infected'
+		if ( e.event == World::EVENTSLIST_ADDETRATIO || e.event == World::EVENTSLIST_ADDABSOLUTE ) {
+			// Time is OK - need to turn a string into a time (in seconds) using getTimeInSeconds().
+			e.time = getTimeInSeconds( trigger.c_str() );
+		} else if (e.event == World::EVENTSLIST_ADDWHEN) {
+			// Not an explicit time, but rather a condition which triggers the event (usually adding x CTL once the Infected cell count reaches y).
+			boost::regex condstr("(\\d+)(\\w+)", boost::regex::perl|boost::regex::icase);
+			boost::cmatch cm;
+			if ( boost::regex_match(trigger.c_str(), cm, condstr) ) {
+				e.condition_number = floor( atof( string(cm[1].first, cm[1].second).c_str() ) );
+				e.condition_type   = Agent2Type(  string(cm[2].first, cm[2].second) );
+				e.time             = 0;
+				if (e.condition_type == 0) {
+					// Unable to parse the trigger!
+					cout << "Unable to parse the trigger part of 'Event  "<< type << " " << value << "'. Invalidating this event." << endl;
+					e.fired = true;
+					e.event = 0;
+				}
+			}
+		} else {
+			// Could not decipher '@' part of the string.. error.
+			cout << "ERROR Could not match the 'time' part of the event string: '"<< value <<"'. Returning prematurely."<<endl;
+			return;
+		}
+
+
+	} else {
+		cout << "ERROR Could not match Event string: '"<< value <<"'. Returning prematurely."<<endl;
+		return;
+	}
+
+	world->addEvent(e);
+}
+
+// Translate pretty string to agent type. .e.g "CTL" to 4
+int ImmunebotsSetup::Agent2Type( string agentpp ) {
+	if ( boost::iequals(agentpp, "CTL") )              			{ return(AbstractAgent::AGENT_CTL); }
+		else if ( boost::iequals(agentpp, "Susceptible") ) 		{ return(AbstractAgent::AGENT_SUSCEPTIBLE); }
+		else if ( boost::iequals(agentpp, "Virion") )      		{ return(AbstractAgent::AGENT_VIRION); }
+		else if ( boost::iequals(agentpp, "Infected") )    		{ return(AbstractAgent::AGENT_INFECTED); }
+		else if ( boost::iequals(agentpp, "InfectedNoVirions") ){ return(AbstractAgent::AGENT_INFECTED_NOVIRIONS); }
+		else {
+			cout << "[WARNING] Unable to parse agent ("<<agentpp<<") in config file. CTL, Susceptible, Virion and Infected[NoVirions] are the only valid options." << endl;
+			return(0);
+		}
 }
 
 // Check to see if we have reached the end conditions specified in the setup

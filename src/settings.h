@@ -37,6 +37,9 @@ namespace conf {
     const int NUMBOTS=5; //initially, and minimally
     const float BOTRADIUS=5; //for drawing
 
+
+
+
     /*******************************
      *     D E P R E C A T E D     *
      *******************************/
