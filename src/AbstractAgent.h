@@ -43,9 +43,10 @@ public:
     static const int AGENT_NOT_SUSCEPTIBLE 	= 1;
     static const int AGENT_SUSCEPTIBLE     	= 2;
     static const int AGENT_INFECTED			= 3;
-    static const int AGENT_CTL			  	= 4;
-    static const int AGENT_VIRION		  	= 5;
+    static const int AGENT_CTL			  		= 4;
+    static const int AGENT_VIRION		  		= 5;
     static const int AGENT_INFECTED_NOVIRIONS = 6; // static cell which doesn't produce any virions
+    static const int AGENT_INFECTED_NOVIRIONS_CLOSEST = 7; // static cell which doesn't produce any virions and only infects closest neighbour
     static const int AGENT_DEADCELL			= 99;
 
     // Boundary conditions

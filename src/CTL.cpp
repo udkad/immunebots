@@ -5,7 +5,6 @@
  *      Author: ulrich
  */
 
-
 #include "CTL.h"
 #include "Cell.h"
 
@@ -39,6 +38,10 @@ void CTL::init(ImmunebotsSetup * ibs) {
 
     active = true;
     lifespan = 0.0;
+    number_of_cells_scanned = 0;
+    number_of_cells_killed  = 0;
+    scan_infected.clear();
+    scan_infected.push_back( ibs->getWorldTime() );
 
     state = STATE_MOVE;
     angle = 0.0; // not correct, but don't have world object atm so can't set the angle
@@ -58,7 +61,8 @@ void CTL::init(ImmunebotsSetup * ibs) {
     	{-radius,0}, {-halfsinr,-halfsinr}
 	};
 
-    memcpy( cellshadow, cellshadowinit, sizeof(cellshadowinit) );
+    //memcpy( cellshadow, cellshadowinit, sizeof(cellshadowinit) ); // STUPID GLIBC incompat between dev and cluster environment
+    memmove( cellshadow, cellshadowinit, sizeof(cellshadowinit) );
     // How Very C! Probably should use a nested vector.
     // Also, there should only be one such vector per radius value, rather than one vector per CTL.
 
@@ -86,7 +90,7 @@ void CTL::drawAgent(GLView * v) {
 	// 1. Draw the body (simple circle)
     glColor4f(conf::COLOUR_CTL[0],conf::COLOUR_CTL[1],conf::COLOUR_CTL[2], 1.0);
     if (chemo_state==1) {
-    	glColor4f(0,0,1, 1.0);
+    	glColor4f(0,0,1,1.0);
     } else if (chemo_state==2) {
     	glColor4f(0,0,1, 1.0);
     }
@@ -163,9 +167,23 @@ void CTL::setInput(float dt, World * w) {
 		if (timer <= 0.0) {
 			// In scanning mode and have reached 0 (or less) on the timer (change states!):
 			w->EventReporter(World::EVENT_CTL_SCANCOMPLETE);
+			number_of_cells_scanned++;
+			// Add the successful scan to the map of cells_scanned
+
+			char buffer [50];
+			int n = sprintf( buffer, "%i", currentCell );
+			//printf( "  --DEBUG. Cell (%s) was scanned successfully\n", buffer);
+			if ( cells_scanned[buffer] != 0 ) {
+				cells_scanned[buffer]++;
+			} else {
+				cells_scanned[buffer] = 1;
+			}
+
 			// If the cell is infected:
 			if ( currentCell!=0 && currentCell->isInfected() ) {
 				w->EventReporter(World::EVENT_INFECTED_ID);
+				scan_infected.push_back(w->worldtime);
+
 				// Start killing the cell
 				state = STATE_KILL;
 				timer = (w->ibs->getParm("t_ctlhandle",30.0f) + randf(w->ibs->getParm("t_ctlhandle_minus",-5.0f),w->ibs->getParm("t_ctlhandle_plus",5.0f)))*60; // Killing takes about 30 mins (*60=s)
@@ -173,6 +191,7 @@ void CTL::setInput(float dt, World * w) {
 				if ( w->ibs->getParm("ctl_immediatekill", 0)==1 && currentCell != 0 && !currentCell->isDead() ) {
 					currentCell->setKilled();
 					w->EventReporter(World::EVENT_INFECTEDDEATH_LYSIS);
+					number_of_cells_killed++;
 				}
 			} else {
 				state = STATE_MOVE;
@@ -195,6 +214,7 @@ void CTL::setInput(float dt, World * w) {
 			if ( w->ibs->getParm("ctl_immediatekill", 0)==0 && currentCell != 0 &&  !currentCell->isDead() ) {
 				currentCell->setKilled();
 				w->EventReporter(World::EVENT_INFECTEDDEATH_LYSIS);
+				number_of_cells_killed++;
 			}
 			// CTL starts moving
 			//cout << this << " CTL has killed cell ("<< currentCell << "); moving on\n";
@@ -321,6 +341,23 @@ void CTL::doOutput(float dt, World *w) {
 		//drawable = true;//(pos.x < w->bounding_max.x && pos.x > w->bounding_min.x && pos.y < w->bounding_max.y && pos.y > w->bounding_min.y);
 	} // else: does nothing (sits on cell)
 
+	// Record current position, if required and if 30 seconds (default) has past since last write-out
+	// TODO: Should include worldtime as well (i.e. time, x, y)
+    if (w->ibs->getParm("stats_ctl_motility", 0) && ( (int)lifespan % w->ibs->getParm("ctl_motility_reporttime",30) == 0)) {
+    	//position_tracker.push_back( pos );
+    	// Find angle to nearest cell
+    	Cell * pseudoCell = w->getNearestInfectedCell(pos.x, pos.y);
+    	float nc = 999.0;  // Special error code
+    	float ma = 999.0; // Special error code
+    	if (pseudoCell!=0) {
+    		nc = atan2( pseudoCell->pos.y - pos.y, pseudoCell->pos.x - pos.x );
+    		ma = angle - nc;
+    	}
+    	// Make the vector
+    	vector<float> deets { w->worldtime, pos.x, pos.y, angle, nc, ma };
+		position_tracker.push_back( deets );
+    }
+
 }
 
 // Returns a 3-element vector of the time spent in each of the 3 states since the last call
@@ -337,6 +374,26 @@ void CTL::getStateFraction( vector< vector<float> > &timefrac ) {
 		timekeeper[i] = 0.0;
 	}
 
+}
+
+// Simple accessor
+int CTL::getNumberOfCellsKilled() {
+	return(number_of_cells_killed);
+}
+
+// Simple accessor
+int CTL::getNumberOfCellsScanned() {
+	return(number_of_cells_scanned);
+}
+
+// Simple accessor
+int CTL::getNumberOfUniqueCellsScanned() {
+	return( cells_scanned.size() );
+}
+
+// Simple accessor
+float CTL::getLifespan() {
+	return(lifespan);
 }
 
 void CTL::printInfo() {

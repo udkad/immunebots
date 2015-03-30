@@ -2,7 +2,7 @@
 
 #ifndef IMMUNEBOTS_NOGL
 #include <GL/glu.h>
-#include <GL/glut.h>
+#include <GL/freeglut.h>
 #include <AntTweakBar.h>
 #endif
 
@@ -419,7 +419,8 @@ GLView::GLView(World *w, ImmunebotsSetup *is):
     	mousedownnomove(false),
     	scale(1.0),
 		processsetupevents(false),
-		fastforwardtime(0)
+		fastforwardtime(0),
+		screenshot(1)
 {
 	world = w;
 	ibs   = is;
@@ -436,6 +437,9 @@ GLView::GLView(World *w, ImmunebotsSetup *is):
 
 	// Initialise the stats module
 	stats = world->stats;
+
+	// Initialise the screenshot filename (hard coded for now)
+	sprintf(screenshotfilename, "Screenshot");
 }
 
 GLView::~GLView() {
@@ -540,7 +544,7 @@ void GLView::processMouse(int button, int state, int x, int y) {
 						// In Simulation mode
 						if ( world->isOverCell(ws[0],ws[1]) ) {
 							Cell * c = world->getCell(ws[0],ws[1]);
-							cout << "[MP] Picked cell["<<c<<"] - "<<c->lastScanTime<<"s ("<<(c->agent_type)<<")\n";
+							cout << "[MP] Picked cell["<<c<<"]("<<c->pos.x<<","<<c->pos.y<<") - "<<c->lastScanTime<<"s (agent_type: "<<(c->agent_type)<<")\n";
 						}
 					}
 
@@ -652,7 +656,7 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
    		toggleDrawing();
     }
 
-    // Fullscreen toggle (TODO)
+    // TODO: Fullscreen toggle
     // See: http://biospud.blogspot.com/2009/08/write-your-own-stereoscopic-3d-program.html
     if (key=='f') {
     	// If not in Game mode: destroy window, setup game mode, enter game mode, create context
@@ -660,6 +664,12 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
     	//glutGameModeString("800x600:32@60");
     	//glutEnterGameMode();
     }
+
+    if (key=='s') {
+   	    // Fake screenshot output
+   	   	printf("Saving cell positions to screenshot file '%s%i.csv'\n", screenshotfilename, screenshot);
+   	   	screenshot++;
+   	}
 
     // Keys for setup
 	// Currently none (could do: d=draw patch mode, i=infect cell mode, a=autoplace cells, c=manual place cells or place CTL)
@@ -679,11 +689,14 @@ void GLView::processNormalKeys(unsigned char key, int x, int y) {
 		} else if (key==45) {
 			//-
 			skipdraw--;
-		} else if (key=='s') {
+		} else if (key=='m') {
 			// "Slow": Cheap way to limit the simulation speed to the max framerate
 			sync_framerate = !sync_framerate;
 		} else {
-	        printf("Unknown key pressed: %i\n", key);
+			// Handle all other key presses.
+			if (key!='s') {
+		        printf("Unknown key pressed: %i\n", key);
+			}
 	    }
 
 	}
@@ -725,9 +738,10 @@ void GLView::handleIdle() {
 
     // Check if we have reached the end of the simulation
 	if ( dosimulation && !paused && ibs->hasReachedEnd() ) { //world->getWorldTime() >= ibs->endTime ) {
-		cout << " - Simulation has been paused or has reached an end condition, ";
+		cout << " - Simulation (has been paused or) has reached an end condition, ";
 		// Force stats writeout
 		world->updateStats(false);
+
 		//world->writeReport(false);
 		if (ibs->automaticRun) {
 			cout << "exiting program." << endl;
@@ -737,6 +751,29 @@ void GLView::handleIdle() {
     		paused = true;
     		draw = true;
     	}
+
+		// Write out CTL k if 'Stats extra' is set
+		if (ibs->getParm("stats_extra", 0)) {
+			// Find a CTL
+			CTL* ctl1 = (CTL*)world->getOneCTL();
+			int nc = ctl1->getNumberOfCellsScanned();
+			int unique_nc = ctl1->getNumberOfUniqueCellsScanned();
+			float tt = ctl1->getLifespan();
+			float ctlv = ibs->getParm("r_ctlspeed", (float)1.0);
+			cout << " - STATS_EXTRA: a single CTL scanned " << nc << " cells (of which "<< unique_nc << " were unique) in " << tt << " seconds (k="<< (nc/tt*60.0) <<"/min; ctl speed="<< ctlv <<"um/s).\n";
+
+			// Get world to interrogate each CTL and print out the number of times it has killed, and the  to a text file.
+			world->writeCTLStats();
+			cout << " - STATS_EXTRA: CTL extra stats (kill count + search times) written to " << ibs->reportdir.c_str() << "/" << ibs->reportfilename.c_str() << "-CTLStats.txt" << endl;
+		}
+
+		// Write out CTL motility data is required
+		if (ibs->getParm("stats_ctl_motility", 0)) {
+			cout << " - CTL MOTILITY: writing out additional information" << endl;
+			// Get world to interrogate first CTL and write the motility data to text file.
+			world->writeCTLMotility();
+		}
+
 	}
 
     // Check if we have anything left in agents (and later, also in the EventsQueue).
@@ -828,6 +865,12 @@ void GLView::automaticEventSetup() {
 	world->addCell(100, 90);
 */
 
+
+/* Seed a cell on the edge to test the boundary wrapping of novirions_closest
+	Cell * myCell = world->getCell(100,1580);
+	world->toggleInfection(myCell->pos.x, myCell->pos.y);
+	myCell->setInfected(true, AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST);
+*/
 
 	/*
 	// On start (first processIdle call), do the following: load the set up file, switch to sim mode, start the sim

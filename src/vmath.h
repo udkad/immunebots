@@ -1372,7 +1372,7 @@ public:
 	 * major order!)
 	 */
 	Matrix3(const T * dt) {
-		std::memcpy(data, dt, sizeof(T) * 9);
+		std::memmove(data, dt, sizeof(T) * 9);
 	}
 
 	/**
@@ -1380,7 +1380,7 @@ public:
 	 * @param src Data source for new created instance of Matrix3
 	 */
 	Matrix3(const Matrix3<T>& src) {
-		std::memcpy(data, src.data, sizeof(T) * 9);
+		std::memmove(data, src.data, sizeof(T) * 9);
 	}
 
 	/**
@@ -1504,7 +1504,7 @@ public:
 	 * @param rhs Right hand side argument of binary operator.
 	 */
 	Matrix3<T>& operator=(const Matrix3<T>& rhs) {
-		std::memcpy(data, rhs.data, sizeof(T) * 9);
+		std::memmove(data, rhs.data, sizeof(T) * 9);
 		return *this;
 	}
 
@@ -1525,7 +1525,7 @@ public:
 	 * @param rhs Right hand side argument of binary operator.
 	 */
 	Matrix3<T>& operator=(const T* rhs) {
-		std::memcpy(data, rhs, sizeof(T) * 9);
+		std::memmove(data, rhs, sizeof(T) * 9);
 		return *this;
 	}
 
@@ -1729,7 +1729,7 @@ public:
 	 * major order!)
 	 */
 	Matrix4(const T * dt) {
-		std::memcpy(data, dt, sizeof(T) * 16);
+		std::memmove(data, dt, sizeof(T) * 16);
 	}
 
 	/**
@@ -1737,7 +1737,7 @@ public:
 	 * @param src Data source for new created instance of Matrix4.
 	 */
 	Matrix4(const Matrix4<T>& src) {
-		std::memcpy(data, src.data, sizeof(T) * 16);
+		std::memmove(data, src.data, sizeof(T) * 16);
 	}
 
 	/**
@@ -1901,7 +1901,7 @@ public:
 	 * @param rhs Right hand side argument of binary operator.
 	 */
 	Matrix4<T>& operator=(const Matrix4<T>& rhs) {
-		std::memcpy(data, rhs.data, sizeof(T) * 16);
+		std::memmove(data, rhs.data, sizeof(T) * 16);
 		return *this;
 	}
 
@@ -1922,7 +1922,7 @@ public:
 	 * @param rhs Right hand side argument of binary operator.
 	 */
 	Matrix4<T>& operator=(const T* rhs) {
-		std::memcpy(data, rhs, sizeof(T) * 16);
+		std::memmove(data, rhs, sizeof(T) * 16);
 		return *this;
 	}
 

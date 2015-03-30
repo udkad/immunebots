@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_set>
 #include <algorithm>
+#include <sstream>
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
@@ -372,6 +373,7 @@ float * World::getCellColourFromType(int ct) {
 		case AbstractAgent::AGENT_SUSCEPTIBLE: 			return(COLOUR_SUSCEPTIBLE);
 		case AbstractAgent::AGENT_INFECTED: 			return(COLOUR_INFECTED);
 		case AbstractAgent::AGENT_INFECTED_NOVIRIONS:	return(COLOUR_INFECTED);
+		case AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST:	return(COLOUR_INFECTED);
 		case AbstractAgent::AGENT_CTL: 					return(COLOUR_CTL);
 		case AbstractAgent::AGENT_DEADCELL: 			return(COLOUR_DEAD);
 	};
@@ -467,7 +469,7 @@ void World::activateEvent(Event *e) {
 		case EVENTSLIST_ADDETRATIO:
 			// E:T depends on the number of Infected cells
 			//this->updateStats(false); // force update: NB. don't need full update, only Infected cells
-			currentnumber = getCurrentPopulation(AbstractAgent::AGENT_INFECTED) + getCurrentPopulation(AbstractAgent::AGENT_INFECTED_NOVIRIONS);
+			currentnumber = getCurrentPopulation(AbstractAgent::AGENT_INFECTED) + getCurrentPopulation(AbstractAgent::AGENT_INFECTED_NOVIRIONS) + getCurrentPopulation(AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST);
 			number = floor(currentnumber * e->number + 0.5); // Get ratio and round to nearest whole int
 			break;
 		case EVENTSLIST_ADDABSOLUTE:
@@ -482,6 +484,7 @@ void World::activateEvent(Event *e) {
 				case AbstractAgent::AGENT_CTL: 					if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_INFECTED:				if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_INFECTED_NOVIRIONS:	if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST:	if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:		if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_SUSCEPTIBLE:			if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_VIRION:				if (currentnumber < e->condition_number) {return;} else {break;}
@@ -498,6 +501,7 @@ void World::activateEvent(Event *e) {
 				case AbstractAgent::AGENT_CTL: 					if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_INFECTED:				if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_INFECTED_NOVIRIONS:	if (currentnumber < e->condition_number) {return;} else {break;}
+				case AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST:	if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_NOT_SUSCEPTIBLE:		if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_SUSCEPTIBLE:			if (currentnumber < e->condition_number) {return;} else {break;}
 				case AbstractAgent::AGENT_VIRION:				if (currentnumber < e->condition_number) {return;} else {break;}
@@ -512,6 +516,7 @@ void World::activateEvent(Event *e) {
 	if (e->event == EVENTSLIST_ENDAFTER) {
 		switch (e->agent) {
 			case AbstractAgent::AGENT_INFECTED: //deliberate fall-through
+			case AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST: //deliberate fall-through
 			case AbstractAgent::AGENT_INFECTED_NOVIRIONS:
 				ibs->setParm("end_infected_le",1);
 				ibs->setParm("end_infected_levalue", e->number );
@@ -556,7 +561,11 @@ int World::getCurrentPopulation(int agent_type) {
 	vector<Cell*>::iterator cit;
 
 	// Magic switch - treat infected as infected_novirions
-	if ((ibs->getParm("ic_novirions", 0)) & (agent_type==AbstractAgent::AGENT_INFECTED)) { agent_type = AbstractAgent::AGENT_INFECTED_NOVIRIONS; }
+	if ( (ibs->getParm("ic_novirions", 0)) & (agent_type==AbstractAgent::AGENT_INFECTED) ) {
+		agent_type = AbstractAgent::AGENT_INFECTED_NOVIRIONS;
+	} else if ( (ibs->getParm("ic_novirions_closest", 0)) & (agent_type==AbstractAgent::AGENT_INFECTED) ) {
+		agent_type = AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST;
+	}
 
 	switch (agent_type) {
 
@@ -572,6 +581,7 @@ int World::getCurrentPopulation(int agent_type) {
 		// Fall through #2: The agents vector for infecteds, ctl and virions
 		case AbstractAgent::AGENT_INFECTED:
 		case AbstractAgent::AGENT_INFECTED_NOVIRIONS:
+		case AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST:
 		case AbstractAgent::AGENT_CTL:
 		case AbstractAgent::AGENT_VIRION:
 			vector<AbstractAgent*>::iterator agent;
@@ -647,31 +657,32 @@ void World::dropCTL() {
 void World::dropCTL(int ctl_number) {
 	int x,y;
 
-	switch ( ibs->getParm("ctl_placement",0) ) {
-		case 0:
+	int ctl_placement = ibs->getParm("ctl_placement",0);
+
+	if (ctl_placement == 0) {
+		for (int i=0; i<ctl_number; i++) {
 			// Random location for each CTL
 			x = randi(bounding_min.x,bounding_max.x);
 			y = randi(bounding_min.y,bounding_max.y);
-			break;
-		case 1:
-			// All CTL come out of a randomly chosen single point of entry
-			// First, check if we have set the random entry point
-			if (ibs->getParm("ctl_placement_random",0)==0) {
-				ibs->setParm("ctl_placement_x", randi(bounding_min.x,bounding_max.x));
-				ibs->setParm("ctl_placement_y", randi(bounding_min.y,bounding_max.y));
-				ibs->setParm("ctl_placement_random",1);
-			}
-			x = ibs->getParm("ctl_placement_x",0);
-			y = ibs->getParm("ctl_placement_y",0);
-			break;
-		case 2:
-			// All CTL come out of the center point
-			x = floor((bounding_min.x + bounding_max.x) / 2.0);
-			y = floor((bounding_min.y + bounding_max.y) / 2.0);
-			break;
+			addCTL(x, y);
+		}
+	} else if (ctl_placement == 1) {
+		// All CTL come out of a randomly chosen single point of entry
+		// First, check if we have set the random entry point
+		if (ibs->getParm("ctl_placement_random",0)==0) {
+			ibs->setParm("ctl_placement_x", randi(bounding_min.x,bounding_max.x));
+			ibs->setParm("ctl_placement_y", randi(bounding_min.y,bounding_max.y));
+			ibs->setParm("ctl_placement_random",1);
+		}
+		x = ibs->getParm("ctl_placement_x",0);
+		y = ibs->getParm("ctl_placement_y",0);
+		for (int i=0; i<ctl_number; i++) { addCTL(x, y); }
+	} else if (ctl_placement == 2) {
+		// All CTL come out of the center point
+		x = floor((bounding_min.x + bounding_max.x) / 2.0);
+		y = floor((bounding_min.y + bounding_max.y) / 2.0);
+		for (int i=0; i<ctl_number; i++) { addCTL(x, y); }
 	}
-
-	for (int i=0; i<ctl_number; i++) { addCTL(x, y); }
 
 }
 
@@ -698,7 +709,7 @@ Cell * World::getCell(int x, int y) {
 	return( CellShadow[x][y] );
 }
 
-// Finds the nearest Infected cell to the given coords.
+// Finds the nearest Infected cell to the given coords, or returns 0.
 // This is the core of the chemotaxis v1 code.
 Cell * World::getNearestInfectedCell(int x, int y) {
 
@@ -707,13 +718,90 @@ Cell * World::getNearestInfectedCell(int x, int y) {
 
 	// Step through the entire cells vector - ignore uninfected and dead cells
 	for (int i=0; i<(int)cells.size(); i++) {
-		if ( cells[i]->agent_type == AbstractAgent::AGENT_INFECTED || cells[i]->agent_type == AbstractAgent::AGENT_INFECTED_NOVIRIONS ) {
+		if ( cells[i]->agent_type == AbstractAgent::AGENT_INFECTED || cells[i]->agent_type == AbstractAgent::AGENT_INFECTED_NOVIRIONS || cells[i]->agent_type == AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST ) {
 			float this_distance = pow(cells[i]->pos.x - x,2) + pow(cells[i]->pos.y - y,2);
 			if (this_distance < closest_distance) { closest_cell = cells[i]; closest_distance = this_distance; }
 		}
 	}
 
 	return(closest_cell);
+}
+
+// Simply returns a reference to the first CTL
+// Used for working out the surveillance rate manually (written to stdout if Stats.extra)
+AbstractAgent * World::getOneCTL() {
+	// Step through the entire cells vector - ignore uninfected and dead cells
+	for (int i=0; i<(int)agents.size(); i++) {
+		if ( agents[i]->agent_type == AbstractAgent::AGENT_CTL ) {
+			return(agents[i]);
+		}
+	}
+	return(0);
+}
+
+// Iterates through CTL list, interrogates each for kill number and then prints it to a file.
+void World::writeCTLStats() {
+	// Step through the entire cells vector - ignore uninfected and dead cells
+
+	char filename[255];
+    sprintf(filename, "%s/%s-CTLStats.txt", ibs->reportdir.c_str(), ibs->reportfilename.c_str());
+    ofstream killfile;
+    killfile.open(filename);
+    killfile << "num_killed,scan_infected_times" << endl;
+
+	for (int i=0; i<(int)agents.size(); i++) {
+		if ( agents[i]->agent_type == AbstractAgent::AGENT_CTL ) {
+			// First column is the number of cells killed; Remainder (note: variable length!!) are the times at which the CTL found an infected cell.
+			killfile << ((CTL*)agents[i])->getNumberOfCellsKilled();
+
+			// Now write out the times the CTL found an infected cell
+			vector<float> siv = ((CTL*)agents[i])->scan_infected;
+			std::ostringstream ss;
+            std::copy(siv.begin(), siv.end() - 1, std::ostream_iterator<int>(ss, ","));
+			ss << siv.back();
+
+			killfile << "," << ss.str() << endl;
+		}
+	}
+
+	killfile.close();
+}
+
+// Iterates through CTL list, find first one and output the position tracker data
+void World::writeCTLMotility() {
+	// Step through the entire cells vector - ignore uninfected and dead cells
+
+	char filename[255];
+
+	int ctlnum = 1;
+
+	for (int i=0; i<(int)agents.size(); i++) {
+		if ( agents[i]->agent_type == AbstractAgent::AGENT_CTL ) {
+
+			// Open new file for this CTL
+			sprintf(filename, "%s/%s-CTL%04d-Motility.txt", ibs->reportdir.c_str(), ibs->reportfilename.c_str(), ctlnum);
+			ofstream motilityfile;
+			motilityfile.open(filename);
+			motilityfile << "# WORLD:"<< (this->bounding_max.x-this->bounding_min.x) << "x" << (this->bounding_max.y-this->bounding_min.y) << endl;
+			motilityfile << "time,x,y,ctl_angle,nc_angle,mig_angle" << endl;
+
+			// Stop at first agent
+			CTL* ctl = (CTL*)agents[i];
+
+			// Iterate through the position tracker vector
+			for (int i=0; i < ctl->position_tracker.size(); i++) {
+				// Write out worldtime,x,y,cell_angle,migration_angle
+				motilityfile << ctl->position_tracker[i][0] << "," << ctl->position_tracker[i][1] << "," << ctl->position_tracker[i][2] << "," << ctl->position_tracker[i][3] << "," << ctl->position_tracker[i][4] << "," << ctl->position_tracker[i][5] << endl;
+			}
+
+			motilityfile.close();
+
+			ctlnum++;
+
+		}
+	}
+
+
 }
 
 // This is the core of the chemotaxis v2 code
@@ -724,7 +812,7 @@ Vector2f World::getStrongestInfectedPull( int x0, int y0 ) {
 	Vector2f R = Vector2f(0.0f,0.0f);
 	// Step through the entire cells vector - ignore uninfected and dead cells
 	for (int i=0; i<(int)cells.size(); i++) {
-		if ( cells[i]->agent_type == AbstractAgent::AGENT_INFECTED || cells[i]->agent_type == AbstractAgent::AGENT_INFECTED_NOVIRIONS ) {
+		if ( cells[i]->agent_type == AbstractAgent::AGENT_INFECTED || cells[i]->agent_type == AbstractAgent::AGENT_INFECTED_NOVIRIONS || cells[i]->agent_type == AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST ) {
 
 			tx = cells[i]->pos.x - x0;
 			ty = cells[i]->pos.y - y0;
@@ -757,22 +845,36 @@ void World::toggleInfection(int x, int y) {
 	}
 }
 
+//bool World::MyDataSortPredicate(const Cell& lhs, const Cell& rhs) static {
+//  return lhs.angle < rhs.angle;
+//}
+
 // 2nd parameter "onlySusceptible" relates to whether we add new infected cells, or turn susceptible cells to infected status.
-void World::infectCells(int total, bool onlySusceptible) {
+void World::infectCells(int total, bool onlySusceptible, bool placeRandomly) {
 	int infectedcount = 0;
 
+	// Prep the iterator: sort so cells closest to center are "seen" first (!placeRandomly) or randomly mix up the cells (placeRandomly)
+	if (placeRandomly) {
+		// Placement is random
+		std::random_shuffle(cells.begin(), cells.end());
+	} else {
+		// Start closest to center, using the cell distance function in the Cell class.
+		std::sort( cells.begin(), cells.end(), Cell::compareCellsPredicate );
+	}
+
 	vector<Cell*>::iterator cell;
-
-	std::random_shuffle(cells.begin(), cells.end());
-
 	cell = cells.begin();
+
 	while (infectedcount<total && cell != cells.end() ) {
+
 		if (!(*cell)->isInfected()) {
 			if ((onlySusceptible && (*cell)->isSusceptible()) || !onlySusceptible) {
 				(*cell)->toggleInfection();
-				// Handle special "ODE-style" infected cells
+				// Handle special "ODE-style" infected cells, as toggleInfection will only toggle them to VIRION
 				if (ibs->getParm("ic_novirions",0)==1) {
 					(*cell)->setCellType(AbstractAgent::AGENT_INFECTED_NOVIRIONS);
+				} else if (ibs->getParm("ic_novirions_closest",0)==1) {
+					(*cell)->setCellType(AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST);
 				}
 				agents.push_back(*cell);
 				infectedcount++;
@@ -780,6 +882,7 @@ void World::infectCells(int total, bool onlySusceptible) {
 		}
 		cell++;
 	}
+
 }
 
 // Saves most of the Stats module to a csv
@@ -1103,6 +1206,7 @@ void World::updateStatsFull() {
 				susceptible++;
 				break;
 			case AbstractAgent::AGENT_INFECTED: // intentional fall through
+			case AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST: // intentional fall through
 			case AbstractAgent::AGENT_INFECTED_NOVIRIONS:
 				infected++;
 				break;

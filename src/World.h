@@ -27,18 +27,18 @@ class World {
 public:
 
 	// Events which are triggered by agents
-	const static int EVENT_INFECTEDDEATH_LYSIS 	= 1;
-	const static int EVENT_INFECTEDDEATH_VIRUS 	= 2;
-	const static int EVENT_FAILEDINFECTION	   	= 3;
-	const static int EVENT_CTL_SCANCOMPLETE		= 4;
-	const static int EVENT_INFECTED_ID			= 5;
+	const static int EVENT_INFECTEDDEATH_LYSIS = 1;
+	const static int EVENT_INFECTEDDEATH_VIRUS = 2;
+	const static int EVENT_FAILEDINFECTION	   	 = 3;
+	const static int EVENT_CTL_SCANCOMPLETE	 = 4;
+	const static int EVENT_INFECTED_ID			 = 5;
 
 	// Events specified in the configfile which take place at a future time..
 	const static int EVENTSLIST_ADDETRATIO  = 1;
 	const static int EVENTSLIST_ADDABSOLUTE = 2;
 	const static int EVENTSLIST_ADDWHEN     = 3;
 	const static int EVENTSLIST_ENDAFTER    = 4;
-	const static int EVENTSLIST_ENDTIME		= 5;
+	const static int EVENTSLIST_ENDTIME	  = 5;
 
     //World();
     World(ImmunebotsSetup*);
@@ -87,9 +87,10 @@ public:
     bool isOverCell(int x, int y); // TODO: Make private?
     Cell * getCell(int x, int y);
     Cell * getNearestInfectedCell(int x, int y);
+    AbstractAgent * getOneCTL();
     Vector2f getStrongestInfectedPull( int x0, int y0 );
     void toggleInfection(int x, int y);
-    void infectCells(int total, bool onlySusceptible);
+    void infectCells(int total, bool onlySusceptible, bool placeInCenter);
 
     void resetCellColours();
     float * getCellColourFromType(int ct);
@@ -108,6 +109,11 @@ public:
 
     /* Iterates through the right vector cells/agents and return the current number of the desired AbstractAgent */
     int getCurrentPopulation(int);
+
+    /* Print out number of cells killed to a (given) file */
+    void writeCTLStats();
+    /*  Print out the position of the first CTL every 30 secs */
+    void writeCTLMotility();
 
     /* LEGACY: Save information to file */
     void saveLayout();
@@ -136,6 +142,9 @@ private:
     //void reproduce(int ai, float MR, float MR2);
     //void addNewByCrossover();
     void addRandomBots(int num);
+
+    //bool distfromcenter(const Cell &first, const Cell &second);
+    //bool MyDataSortPredicate(const Cell& lhs, const Cell& rhs);
 
     // This is the active agents vector
     std::vector<AbstractAgent*> agents;

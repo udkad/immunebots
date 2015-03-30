@@ -2,7 +2,7 @@
 #define GLVIEW_H
 
 #ifndef IMMUNEBOTS_NOGL
-#include <GL/glut.h>
+#include <GL/freeglut.h>
 #endif
 
 #include <vector>
@@ -143,6 +143,10 @@ private:
 	int lastmousey; // Need to know the last place the mouse was panned from
 	int lastmousex;
 	float scale;
+
+	/* Screenshot variables */
+	int screenshot;
+	char screenshotfilename[100];
 
 	/* Vertex lists (enabled if conf::USE_VERTEX_ARRAY */
 	int cell_list, cell_outline_list;

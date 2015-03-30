@@ -106,6 +106,9 @@ void ImmunebotsSetup::processSetupFile() {
 				} else if (boost::iequals(value, "ctl_r")) {
 					cout << " - turning on extra stats output for CTL (chemotaxis v2 only)" << endl;
 					setParm("stats_ctl_r", 1);
+				} else if (boost::iequals(value, "ctl_motility")) {
+					cout << " - turning on motility output for CTL, reporting every "<< getParm("ctl_motility_reporttime",30) << " seconds (reporting time may be override by an unprocessed directive)"<< endl;
+					setParm("stats_ctl_motility", 1);
 				}
 			} else if (boost::iequals(keyword, "layoutfile")) {
 				layoutfilename = value;
@@ -149,6 +152,10 @@ void ImmunebotsSetup::processSetupFile() {
 				handleEndCondition(pname, pval);
 			} else if (boost::iequals(keyword, "Event")) {
 				handleEvents( pname, pval );
+			} else if (boost::iequals(keyword, "Stats")) {
+				if (boost::iequals(pname, "ctl_motility_reporttime")) {
+					setParm( "ctl_motility_reporttime", pval );
+				}
 			} else {
 				// Handle Nonsusceptible/Susceptible/Infected/CTL keywords
 				boost::to_lower(pname);
@@ -171,7 +178,13 @@ void ImmunebotsSetup::processSetupFile() {
 						} else if ( boost::iequals(pval,"singlepoint_center") ) {
 							setParm( "ctl_placement", 2 );
 						}
-					} // else ignore
+					} else if (boost::iequals(keyword, "INFECTED")) {
+						if ( boost::iequals(pval,"random") ) {
+							setParm( "ic_placement_random", 1 );
+						} else if ( boost::iequals(pval,"center") ) {
+							setParm( "ic_placement_random", 0 );
+						}
+					}	// else ignore
 				} else if ( boost::iequals(pname,"TYPE") ) {
 					// Handle the "type" pname (value is not an integer, so handle special)
 					if (boost::iequals(keyword, "Infected")) {
@@ -181,6 +194,9 @@ void ImmunebotsSetup::processSetupFile() {
 						} else if ( boost::iequals(pval,"novirions") ) {
 							// Use the Novirions agent instead of the (default) Infected cell type
 							setParm( string("ic_novirions"), 1 );
+						} else if ( boost::iequals(pval,"novirions_closest") || boost::iequals(pval,"closest") ) {
+							// Use the Novirions (Closest variant) agent instead of the (default) Infected cell type
+							setParm( string("ic_novirions_closest"), 1 );
 						}
 					} // else ignore other 'type' variables
 				} else if ( boost::iequals(pname,"BOUNDARY") ) {
@@ -320,7 +336,7 @@ void ImmunebotsSetup::handleCommands(std::string command, std::string value) {
 			placeNonsusceptibleCells();
 		} else if (boost::iequals(value,"infected")){
 			// Infect x susceptible cells
-			world->infectCells( getParm("ic_totalcount",1), true);
+			world->infectCells( getParm("ic_totalcount",1), true, getParm("ic_placement_random",1));
 			cout << " - Infecting "<<getParm("ic_totalcount",1)<<" susceptible cell(s)" << endl;
 		} else if (boost::iequals(value,"ctl")){
 			world->dropCTL( getParm("ctl_totalcount",0) );
@@ -429,7 +445,8 @@ int ImmunebotsSetup::Agent2Type( string agentpp ) {
 	else if ( boost::iequals(agentpp, "Susceptible") ) 		{ return(AbstractAgent::AGENT_SUSCEPTIBLE);        }
 	else if ( boost::iequals(agentpp, "Virion") )      		{ return(AbstractAgent::AGENT_VIRION);             }
 	else if ( boost::iequals(agentpp, "Infected") )    		{ return(AbstractAgent::AGENT_INFECTED);           }
-	else if ( boost::iequals(agentpp, "InfectedNoVirions") ){ return(AbstractAgent::AGENT_INFECTED_NOVIRIONS); }
+	else if ( boost::iequals(agentpp, "InfectedNoVirions") )		{ return(AbstractAgent::AGENT_INFECTED_NOVIRIONS); 			}
+	else if ( boost::iequals(agentpp, "InfectedNoVirionsClosest") ){ return(AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST);  }
 	else {
 		cout << "[WARNING] Unable to parse agent (" << agentpp << ") in config file. CTL, Susceptible, Virion and Infected[NoVirions] are the only valid options." << endl;
 		return(0);
@@ -444,7 +461,8 @@ string ImmunebotsSetup::Type2Agent( int agentnum ) {
 		case AbstractAgent::AGENT_SUSCEPTIBLE: 	agentpp = "Susceptible"; break;
 		case AbstractAgent::AGENT_VIRION: 		agentpp = "Virion"; break;
 		case AbstractAgent::AGENT_INFECTED: 	agentpp = "Infected"; break;
-		case AbstractAgent::AGENT_INFECTED_NOVIRIONS: agentpp = "InfectedNoVirions"; break;
+		case AbstractAgent::AGENT_INFECTED_NOVIRIONS: 			agentpp = "InfectedNoVirions"; break;
+		case AbstractAgent::AGENT_INFECTED_NOVIRIONS_CLOSEST: 	agentpp = "InfectedNoVirionsClosest"; break;
 		default: cout << "[WARNING] Unable to parse agent number (" << agentnum << ") to anything meaningful!" << endl;
 	}
 	return(agentpp);
@@ -520,6 +538,9 @@ void ImmunebotsSetup::placeNonsusceptibleCells() {
 	} // else: other options tbd
 }
 
+float ImmunebotsSetup::getWorldTime() {
+	return( world->worldtime );
+}
 
 void ImmunebotsSetup::setEndTime(const char* et) {
 	endTime = getTimeInSeconds(et);
@@ -555,4 +576,11 @@ int ImmunebotsSetup::getTimeInSeconds(const char* et) {
     }
 
 	return(tis);
+}
+
+Vector2<int> ImmunebotsSetup::getBounding( bool getMin ) {
+	if (getMin) {
+		return( world->bounding_min );
+	}
+	return( world->bounding_max );
 }

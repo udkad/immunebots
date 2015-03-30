@@ -22,6 +22,7 @@ public:
 	ImmunebotsSetup();
 	virtual ~ImmunebotsSetup();
 	void setWorld(World *);
+	float getWorldTime();
 
 	/* The setup variables */
 	bool useGlut;
@@ -42,6 +43,8 @@ public:
 	int   getParm(std::string, int);
 	void  setParm(std::string, float);
 	void  setParm(std::string, int);
+
+	Vector2<int> getBounding( bool getMin );
 
 private:
 

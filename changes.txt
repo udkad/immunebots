@@ -1,5 +1,9 @@
 == Changelog
 
+Version 1.000860
+Backup date: 2013-08-02
+Fixed random CTL entrypoints error. Added surveillance calculation if stats_extra. Now outputs a "number of cells killed" text file if stats_extra. The "number of cells killed" text file if stats_extra now changed to <ID>-CTLStat.txt, includes times at which the CTL killed a cell (one CTL per line, columns are variable). Added "Infected PLACEMENT center" as a config file option to allow the initial infected cells to be placed in the center of the grid. Default is random placement on the grid.
+
 Version 1.000854
 Backup date: 2012-05-13
 Switched to freeglut from glut. emoved some debug code. Allow single-point-of-entry for CTL (center or random point); normalised csv writeout to CTL Add event. Several fixes including a Chemotaxis v1 erratic printout. Note: Marked as "broken" in the backup, probably due to kernel incompatibilities between the cluster and dev machines.

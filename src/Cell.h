@@ -15,6 +15,7 @@
 
 #include <vector>
 #include <string>
+#include <functional>
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
@@ -46,20 +47,39 @@ public:
 
 	// Set Cell Type functions (really just wrappers for setCellType)
 	void setInfected(bool isInfected);
+	void setInfected(bool infected, int infection_type);
 	void setSusceptible(float sp);
 	void setKilled();
 	void setScanTime(float wt);
 	void toggleInfection();
 	bool isInfected();
 	bool isSusceptible();
-
     // Note: Ensure that Cell::setColourFromType() has a case for all of the above Cell Types
 
+	static bool compareCellsPredicate(Cell* lhs, Cell* rhs) {
+		Vector2<int> b_min = lhs->getBounding(true);
+		Vector2<int> b_max = lhs->getBounding(false);
+
+	    // Find the center of the grid
+		int centerx = b_min.x + (b_max.x - b_min.x)/2;
+		int centery = b_min.y + (b_max.y - b_min.y)/2;
+
+		return( (abs(lhs->pos.x-centerx) + abs(lhs->pos.y-centery)) < (abs(rhs->pos.x-centerx) + abs(rhs->pos.y-centery)) );
+	}
+
+	Vector2<int> getBounding(bool);
+
 private:
+
+	/* Save the ibs for future reference */
+	ImmunebotsSetup * ibs;
 
 	/* Rate parameters, in seconds*/
 	float r_vproduction; // Rate of virion production
 	float r_death; // Infected cell death rate
+
+	// Only required for No Virions, closest infection scenario
+	int infectionshadow[8][2];
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
 	// For serialisation:

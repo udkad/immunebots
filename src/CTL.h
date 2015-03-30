@@ -12,7 +12,7 @@
 #include "World.h"
 #include "AbstractAgent.h"
 #include "ImmunebotsSetup.h"
-//#include <>
+#include <map>
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
@@ -38,9 +38,19 @@ public:
 	void setInput(float dt, World * const);
 	void doOutput(float dt, World * const);
 
+	// Some accessor functions
+	int getNumberOfCellsScanned();
+	int getNumberOfCellsKilled();
+	int getNumberOfUniqueCellsScanned();
+	vector<float> scan_infected;
+	float getLifespan();
+
 	// Pass in a 2D vector of dim 3x(CTL number). CTL pushes on the fraction of time spent in each of the 3 states.
 	void getStateFraction( vector< vector<float> >& );
 	void printInfo();
+
+	// Log the position of this CTL every 30s (default), if required
+	vector< vector<float> > position_tracker;
 
 	float pull;
 
@@ -52,6 +62,9 @@ private:
 	Cell *currentCell;
 	Cell *lastCell;
 	Cell *nearestCell;
+	int number_of_cells_scanned;
+	int number_of_cells_killed;
+	map<string,int> cells_scanned;  // A debug construct to see how many times we scan the same cell
 	float timer;
 	float cellshadow[9][2];
 	int chemotaxis_type;
