@@ -27,7 +27,8 @@ typedef struct {   /* Our stats module - will be updated at an appropriate frequ
 	float infected_death_average, infected_lysis_average;	/* Averaged (over 1 min) */
 	int failed_infection;				/* Triggered when a virion goes over a cell but doesn't infect */
 	/* Events: Average cells scanned by CTL each minute */
-	int scan_complete;
+	int scan_complete; // All cells
+	int iscan_complete; // Infected cells
 	std::vector<int> scan;
 	int lastCalled;
 	float scan_average;

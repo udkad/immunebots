@@ -40,6 +40,9 @@ ImmunebotsSetup::ImmunebotsSetup() {
     parameters["update_stats"] = 300.0; /* Will be overridden if there is an EndCondition or Event */
     //cout << " [DEBUG] update stats was just init - got " << parameters["update_stats"] << "s. Count is "<< parameters.count("update_stats") << "." << endl;
 
+    // Legacy defaults:
+    parameters["ctl_immediatekill"] = 0.0; // CTL kill immediately after scanning; keyword is: CTL LYSIS [start|end].
+
     // Initial starting dimensions of the world.
     parameters["WIDTH"]  = conf::DefaultWidth;
     parameters["HEIGHT"] = conf::DefaultHeight;
@@ -193,6 +196,16 @@ void ImmunebotsSetup::processSetupFile() {
 					} else {
 						cout << "WARNING: Unrecognised boundary condition in setupfile (ignoring..): " << line << endl;
 						return;
+					}
+
+				} else if ( boost::iequals(pname,"LYSIS") ) {
+					// This determines when a E-I conjugate lyses the cells: either at the beginning of the handling time, or at the end.
+					if ( boost::iequals(keyword,"CTL") ) {
+						if ( boost::iequals(pval,"start") ) {
+							setParm("ctl_immediatekill",1);
+						} else if ( boost::iequals(pval,"end") ) {
+							setParm("ctl_immediatekill",0);
+						}
 					}
 
 				} else if (boost::iequals(keyword, "Nonsusceptible")) {

@@ -108,7 +108,6 @@ void CTL::setInput(float dt, World * w) {
 		}
 	}
 
-
 	if ( currentCell == 0 && state != STATE_MOVE ) {
 		cout << this << "CTL ERROR: Not on a cell but state is sense or kill ("<< state<< ")\n";
 	}
@@ -120,52 +119,62 @@ void CTL::setInput(float dt, World * w) {
 		// If we're over a new cell, then "sense" it
 		if (currentCell!=0 && currentCell!=lastCell) {
 			state = STATE_SENSE;
-			timer = w->ibs->getParm("t_ctlscan",25.0f); // 25s-60s for sensing this cell
+			timer = w->ibs->getParm("t_ctlscan",5.0f); // 5s for sensing this cell
 		}
 
 	} else if ( state == STATE_SENSE ) {
 		// 1. Have we finished sensing the current cells? If so - start moving
 		timer -= dt;
+		// This is only used to colour the cells to show "time since last scan".
 		if (currentCell != 0) {
 			currentCell->setScanTime(w->worldtime);
 		}
 
-		if (timer <= 0) {
+		if (timer <= 0.0) {
 			// In scanning mode and have reached 0 (or less) on the timer (change states!):
 			w->EventReporter(World::EVENT_CTL_SCANCOMPLETE);
-			if (currentCell!=0 && currentCell->isInfected()) {
+			// If the cell is infected:
+			if ( currentCell!=0 && currentCell->isInfected() ) {
+				w->EventReporter(World::EVENT_INFECTED_ID);
 				// Start killing the cell
 				state = STATE_KILL;
 				timer = (w->ibs->getParm("t_ctlhandle",30.0f) + randf(w->ibs->getParm("t_ctlhandle_minus",-5.0f),w->ibs->getParm("t_ctlhandle_plus",5.0f)))*60; // Killing takes about 30 mins (*60=s)
+				// Kill cell now if immediatekill is on.
+				if ( w->ibs->getParm("ctl_immediatekill", 0)==1 && currentCell != 0 && !currentCell->isDead() ) {
+					currentCell->setKilled();
+					w->EventReporter(World::EVENT_INFECTEDDEATH_LYSIS);
+				}
 			} else {
 				state = STATE_MOVE;
-				angle = randf(-M_PI,M_PI);
+				// Previous angle was 0-360 range (actually -180 to 180). Now make it +/-22.5 (i.e. 1/4 PI) of previous angle
+				//angle = randf(-M_PI,M_PI);
+				angle += randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
 				timer = getPersistenceLength(w);
 				lastCell = currentCell;
 				currentCell = 0;
 			}
 		} // else do nothing.. just let timer tick down
 	} else if ( state == STATE_KILL ) {
+
 		timer -= dt;
-		// Not sure when the CTL actually kills the cell: at some point during the 30mins!
-		if (currentCell != 0 &&  !currentCell->isDead() ) {
-			if ( randf(0,1) <= (1.0/timer)) {
-				// Kill cell and notify the world event reporter
+
+		// Simple version: T cell kills the infected cell at end of 30 mins
+		if (timer <= 0) {
+			// Kill if cell instead already dead and immediatekill is off.
+			if ( w->ibs->getParm("ctl_immediatekill", 0)==0 && currentCell != 0 &&  !currentCell->isDead() ) {
 				currentCell->setKilled();
 				w->EventReporter(World::EVENT_INFECTEDDEATH_LYSIS);
 			}
-		}
-		if (timer <= 0) {
-			// Cell must be dead by now.
-			currentCell->setKilled();
 			// CTL starts moving
 			//cout << this << " CTL has killed cell ("<< currentCell << "); moving on\n";
 			state = STATE_MOVE;
-			angle = randf(-M_PI,M_PI);
+			//angle = randf(-M_PI,M_PI);
+			angle += randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
 			timer = getPersistenceLength(w);
 			lastCell = currentCell;
 			currentCell = 0;
 		}
+
 	}
 
 }
@@ -185,7 +194,7 @@ void CTL::doOutput(float dt, World *w) {
 
 		// Reset the angle once we reach the end of our persistence length
 		if ( timer <= 0 ) {
-			angle += randf(0.0, M_PI)-M_PI/2.0;
+			angle += randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
 			timer = getPersistenceLength(w);
 		}
 

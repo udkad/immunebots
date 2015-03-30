@@ -144,7 +144,8 @@ int main(int argc, char **argv) {
 
     // Continue with rest of the GL initialisation
     //glClearColor(0.1,0.9,1.0,1.0); //cyan
-    glClearColor(1.0,1.0,1.0,1.0); // white
+    //glClearColor(1.0,1.0,1.0,1.0); // white
+    glClearColor(0,0,0,0.5); // black
     glutDisplayFunc(gl_renderScene);
     glutIdleFunc(gl_handleIdle);
     glutReshapeFunc(gl_changeSize);

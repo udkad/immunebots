@@ -60,7 +60,7 @@ public:
 
 	// Position-related
 	Vector2f pos;
-    float angle;
+    float angle; // This must be in radians!
     float speed;
     float radius;
 

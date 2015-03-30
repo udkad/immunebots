@@ -31,6 +31,7 @@ public:
 	const static int EVENT_INFECTEDDEATH_VIRUS 	= 2;
 	const static int EVENT_FAILEDINFECTION	   	= 3;
 	const static int EVENT_CTL_SCANCOMPLETE		= 4;
+	const static int EVENT_INFECTED_ID			= 5;
 
 	// Events specified in the configfile which take place at a future time..
 	const static int EVENTSLIST_ADDETRATIO  = 1;

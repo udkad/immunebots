@@ -235,6 +235,9 @@ void World::EventReporter(int event_type) {
 		case EVENT_CTL_SCANCOMPLETE:
 			stats->scan_complete++;
 			break;
+		case EVENT_INFECTED_ID:
+			stats->iscan_complete++;
+			break;
 
 		default: break;
 	}
@@ -545,6 +548,9 @@ int World::getCurrentPopulation(int agent_type) {
 	vector<Cell*>::iterator cit;
 	vector<AbstractAgent*>::iterator agent;
 
+	// Magic switch - treat infected as infected_novirions
+	if (ibs->getParm("ic_novirions", 0) & agent_type==AbstractAgent::AGENT_INFECTED) { agent_type = AbstractAgent::AGENT_INFECTED_NOVIRIONS; }
+
 	switch (agent_type) {
 
 		// Fall through #1: The cells vector for all cells (Dead, NS, S and I)
@@ -707,28 +713,33 @@ void World::writeReport(bool firstTime) {
 	if ( ibs->getParm("stats_extra",0) ) {
 		// Empty the 'fraction of time spent in each state' vector
 		stats->ctlsf.assign(3,0);
-		// Create a 3-rowed 2D vector (note: empty).
-		vector< vector<float> > ctlsfull( CTL::STATE_MAX, vector<float>() );
 
-		vector<AbstractAgent*>::iterator agent;
-		for ( agent = agents.begin(); agent != agents.end(); ++agent) {
-			if ( ((AbstractAgent*)(*agent))->getAgentType() == AbstractAgent::AGENT_CTL ) {
-			// Work out the fraction of time each CTL spent in each of the 3 states.
-				((CTL*)(*agent))->getStateFraction( ctlsfull );
+		// Don't continue unless we have any CTL
+		if ( stats->ctl > 0 ) {
+
+			// Create a 3-rowed 2D vector (note: empty).
+			vector< vector<float> > ctlsfull( CTL::STATE_MAX, vector<float>() );
+
+			vector<AbstractAgent*>::iterator agent;
+			for ( agent = agents.begin(); agent != agents.end(); ++agent) {
+				if ( ((AbstractAgent*)(*agent))->getAgentType() == AbstractAgent::AGENT_CTL ) {
+				// Work out the fraction of time each CTL spent in each of the 3 states.
+					((CTL*)(*agent))->getStateFraction( ctlsfull );
+				}
 			}
-		}
 
-		// Aggregate the CTL fractional state vector (ctlsfull) into ctlsf
-		vector<float> localsf(CTL::STATE_MAX, 0);
+			// Aggregate the CTL fractional state vector (ctlsfull) into ctlsf
+			vector<float> localsf(CTL::STATE_MAX, 0);
 
-		for (int i=0; i < CTL::STATE_MAX; i++ ) {
-			for( int j = 0 ; j < ctlsfull[i].size() ; j++ ) {
-				localsf[i] += ctlsfull[i][j];
+			for (int i=0; i < CTL::STATE_MAX; i++ ) {
+				for( int j = 0 ; j < ctlsfull[i].size() ; j++ ) {
+					localsf[i] += ctlsfull[i][j];
+				}
 			}
-		}
 
-		// And now divide through by ctlsfull.size()
-		for (int i=0; i<CTL::STATE_MAX; i++) stats->ctlsf[i] = localsf[i] / ctlsfull[i].size();
+			// And now divide through by ctlsfull.size()
+			for (int i=0; i<CTL::STATE_MAX; i++) stats->ctlsf[i] = localsf[i] / ctlsfull[i].size();
+		}
 	}
 
 
@@ -755,7 +766,7 @@ void World::writeReport(bool firstTime) {
 		// Open file normally (will overwrite everything)
 		logfile.open(buffer);
 		// Write out the header
-		logfile << "time,susceptible,infected,dead,virions,ctl";
+		logfile << "time,nonsusceptible,susceptible,infected,dead,virions,ctl";
 		if (ibs->getParm("stats_extra",0)) {
 			// Add any other stats output headers to the logfile
 			logfile << ",scan_avg,ctl_sm,ctl_ss,ctl_sl";
@@ -767,7 +778,7 @@ void World::writeReport(bool firstTime) {
 	}
 
 	// Write-out the stats (currently write out everything)
-	logfile << worldtime <<","<< stats->susceptible <<","<< stats->infected <<","<< stats->dead <<","<< stats->virion <<","<< stats->ctl;
+	logfile << worldtime <<","<< stats->notsusceptible << "," << stats->susceptible <<","<< stats->infected <<","<< stats->dead <<","<< stats->virion <<","<< stats->ctl;
 	if ( ibs->getParm("stats_extra",0) ) {
 		// Add any other stats output headers to the logfile
 		logfile << "," << stats->scan_average;
@@ -806,7 +817,8 @@ void World::drawBackground(View* view, bool simulationmode) {
 		// Setup mode
 		// a. Draw the worldspace in cyan
 		glBegin(GL_QUADS);
-		glColor4f(0.1,0.9,1.0,0.5);
+		//glColor4f(0.1,0.9,1.0,0.5);
+		glColor4f(0,0,0,0.5);
 		glVertex3f(0,0,-conf::FAR_PLANE);
 		glVertex3f(0,ibs->getParm("HEIGHT",0),-conf::FAR_PLANE);
 		glVertex3f(ibs->getParm("WIDTH",0),ibs->getParm("HEIGHT",0),-conf::FAR_PLANE);
@@ -821,7 +833,8 @@ void World::drawBackground(View* view, bool simulationmode) {
 		// Simulation mode
 		// a. Draw the bounding box quad in cyan
 		glBegin(GL_QUADS);
-		glColor4f(0.1,0.9,1.0,0.5);
+		//glColor4f(0.1,0.9,1.0,0.5);
+		glColor4f(1,1,1,0.5);
 		glVertex3f(bounding_min.x,bounding_min.y,-conf::FAR_PLANE);
 		glVertex3f(bounding_min.x,bounding_max.y,-conf::FAR_PLANE);
 		glVertex3f(bounding_max.x,bounding_max.y,-conf::FAR_PLANE);
@@ -863,7 +876,6 @@ void World::drawForeground(View* view) {
     for ( ait = agents.begin(); ait != agents.end(); ++ait) {
     	// Only draws the agent if it's within the world bounding box
     	view->drawAgent(*ait); // note: this just calls ait->drawAgent(view);
-        //(*ait)->drawAgent((GLView)view);	// Skip the middle man, if I can figure out how
     }
 
 }
@@ -1077,7 +1089,7 @@ void World::updateStats(bool resetEvents) {
 		if ( stats->ctl == 0 ) {
 			stats->scan_average = 0;
 		} else {
-			stats->scan_average = stats->scan_average * 60 / (worldtime - stats->lastCalled) / stats->ctl;
+			stats->scan_average = stats->scan_average * 60.0 / (worldtime - stats->lastCalled) / float(stats->ctl);
 		}
 
 		stats->lastCalled = worldtime;

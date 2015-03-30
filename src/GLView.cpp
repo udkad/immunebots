@@ -913,15 +913,15 @@ void GLView::drawCell(Cell *cell) {
 
 	// 1. Draw the body (simple circle)
 	// Special colour for uninfected cells)
-	if ((cell->agent_type == AbstractAgent::AGENT_NOT_SUSCEPTIBLE) && (cell->lastScanTime>1.0)) {
+	if ((cell->agent_type == AbstractAgent::AGENT_NOT_SUSCEPTIBLE) && (cell->lastScanTime>0.0)) {
 		// Create a blueish colour based on the last cell type
 		float decayFactor = 12*60*60; // Decay in 12h
-		float timeSinceScan = world->worldtime - cell->lastScanTime + 1.0/decayFactor;
-		// Now interpolate between verylightblue (200,200,220) and mediumblue (70,70,170)
+		float timeSinceScan = min(decayFactor, world->worldtime - cell->lastScanTime);// + 1.0/decayFactor;
+		// Now interpolate between lightblue (200,200,220) and mediumblue (70,70,170)
 		glColor4f(
-			( 70.0+(60.0*timeSinceScan/decayFactor))/255.0,
-			( 70.0+(60.0*timeSinceScan/decayFactor))/255.0,
-			(170.0+(25.0*timeSinceScan/decayFactor))/255.0,
+			( 70.0+(130.0*timeSinceScan/decayFactor))/255.0,
+			( 70.0+(130.0*timeSinceScan/decayFactor))/255.0,
+			(170.0+(50.0*timeSinceScan/decayFactor))/255.0,
 			 1.0);
 	} else {
 		glColor4fv( world->getCellColourFromType(cell->agent_type) );

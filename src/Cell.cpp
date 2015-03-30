@@ -42,7 +42,7 @@ void Cell::init(ImmunebotsSetup * ibs){
     //nearestPatch = Vector2f(conf::WIDTH/2, conf::HEIGHT/2);
     radius = conf::BOTRADIUS;
     agent_type = AGENT_NOT_SUSCEPTIBLE;
-    lastScanTime = 0.0;
+    //lastScanTime = 0.0;
 
     // Rates (in secs)
     // TODO: This should be set (overwritten perhaps!) by the virion.
@@ -58,13 +58,15 @@ void Cell::init(ImmunebotsSetup * ibs){
 
     dead = false;
 
+    lastScanTime = 0.0;
+
 }
 
 Cell::~Cell() {}
 
 /* AbstractAgent functions */
 
-// Cells are not drawn using this function
+// Cells are not drawn using this function: see GLView::drawCell()
 void Cell::drawAgent(GLView * v) {
 }
 
