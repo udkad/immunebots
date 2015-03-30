@@ -28,7 +28,6 @@ CTL::CTL(int x, int y, ImmunebotsSetup * ibs) {
 void CTL::init(ImmunebotsSetup * ibs) {
 	// CTL have a position, and a speed
     pos   = Vector2f(randf(0,ibs->getParm("WIDTH",conf::DefaultWidth)),randf(0,ibs->getParm("HEIGHT",conf::DefaultHeight)));
-    angle = 0.0;
     speed = ibs->getParm("r_ctlspeed",1.0f);
     radius = conf::BOTRADIUS;;
     agent_type = AbstractAgent::AGENT_CTL;
@@ -40,8 +39,10 @@ void CTL::init(ImmunebotsSetup * ibs) {
 
     active = true;
     lifespan = 0.0;
-    timer = 0.0;
+
     state = STATE_MOVE;
+    angle = 0.0; // not correct, but don't have world object atm so can't set the angle
+    timer = 0.0;
 
     drawable = true;
     draw_priority = 0.8; // high priority
@@ -219,19 +220,22 @@ float CTL::getAngle(World *w) {
 	if ( chemotaxis_type ) {
 
 		// Chemotaxis version 1
-		if ( chemotaxis_type==1 && randf(0.0f, 1.0f) < w->ibs->getParm("ctl_chemotaxis_pc", 0.05f) ) {
-			// Choose a trajectory which will hit the nearest infected cell
-			// TODO: Limit the chemotaxis scan radius
+		if ( chemotaxis_type==1 ) {
+			if ( randf(0.0f, 1.0f) < w->ibs->getParm("ctl_chemotaxis_pc", 0.05f) ) {
 
-			nearestCell = w->getNearestInfectedCell(pos.x, pos.y);
-			if (nearestCell!=0) {
-				// Set angle based on position of nearest cell: sin0=o/h
-				//newangle = atan2( pos.y, pos.x ) - atan2( nearestCell->pos.y, nearestCell->pos.x );
-				newangle = atan2( nearestCell->pos.y - pos.y, nearestCell->pos.x - pos.x );
-				chemo_state = 1;
+				// Choose a trajectory which will hit the nearest infected cell
+				// TODO: Limit the chemotaxis scan radius
 
-				//cout << "[DEBUG-CTL] ctl_x "<<pos.x<<"; target_x="<<nearestCell->pos.x<<"; chemotactic-angle set as: " << angle * 180/M_PI << endl;
-			}
+				nearestCell = w->getNearestInfectedCell(pos.x, pos.y);
+				if (nearestCell!=0) {
+					// Set angle based on position of nearest cell: sin0=o/h
+					//newangle = atan2( pos.y, pos.x ) - atan2( nearestCell->pos.y, nearestCell->pos.x );
+					newangle = atan2( nearestCell->pos.y - pos.y, nearestCell->pos.x - pos.x );
+					chemo_state = 1;
+
+					//cout << "[DEBUG-CTL] ctl_x "<<pos.x<<"; target_x="<<nearestCell->pos.x<<"; chemotactic-angle set as: " << angle * 180/M_PI << endl;
+				}
+			} // else use random angle
 		// Chemotaxis version 2
 		} else if ( chemotaxis_type==2 ) {
 			// The entire chemotaxis v2 code goes here:
@@ -269,7 +273,8 @@ void CTL::doOutput(float dt, World *w) {
 
 		// Reset the angle once we reach the end of our persistence length
 		if ( timer <= 0 ) {
-			angle += randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
+			//angle += randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
+		    angle = getAngle(w);
 			timer = getPersistenceLength(w);
 		}
 

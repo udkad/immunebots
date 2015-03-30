@@ -74,10 +74,10 @@ void ImmunebotsSetup::processSetupFile() {
 	string line;
 	// Lots of regex's (2-args, 3-args, Comment (#), Blank line (\s+))
 	// Note: 2-args and 3-args now work with comments at the end of the line, eg. "CTL r_lysis 0.001 #arbitrary value"
-	boost::regex re2("\\s*([^#][^\\s]+)\\s+([^\\s#]+)(\\s*#.*)?", boost::regex::perl|boost::regex::icase);
+	boost::regex re2("\\s*([^#][^\\s]+)\\s+([^\\s#]+)(\\s*#.*)?",                   boost::regex::perl|boost::regex::icase);
 	boost::regex re3("\\s*([^#][^\\s]+)\\s+([^\\s]+)\\s+([^#]*?[^#\\s])(\\s*#.*)?", boost::regex::perl|boost::regex::icase);
 	boost::regex reC("\\s*#.*", boost::regex::perl|boost::regex::icase);
-	boost::regex reS("\\s*", boost::regex::perl|boost::regex::icase);
+	boost::regex reS("\\s*",    boost::regex::perl|boost::regex::icase);
 	boost::cmatch ma;
 
 	while ( sfile.good() ) {
@@ -162,6 +162,14 @@ void ImmunebotsSetup::processSetupFile() {
 					} else if (boost::iequals(keyword, "Susceptible")) {
 						if ( boost::iequals(pval,"random") ) {
 							setParm( string("sc_").append(pval), 1 );
+						}
+					} else if (boost::iequals(keyword, "CTL")) {
+						if ( boost::iequals(pval,"random") ) {
+							setParm( "ctl_placement", 0 );
+						} else if ( boost::iequals(pval,"singlepoint_random") ) {
+							setParm( "ctl_placement", 1 );
+						} else if ( boost::iequals(pval,"singlepoint_center") ) {
+							setParm( "ctl_placement", 2 );
 						}
 					} // else ignore
 				} else if ( boost::iequals(pname,"TYPE") ) {

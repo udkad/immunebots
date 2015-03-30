@@ -9,7 +9,7 @@
 /* These are the GL-related libraries */
 #ifndef IMMUNEBOTS_NOGL
 #include <GL/glew.h>
-#include <GL/glut.h>
+#include <GL/freeglut.h>
 #include <AntTweakBar.h>
 #endif
 
@@ -18,12 +18,12 @@
 #include "World.h"
 #include "config.h"
 
+#include <ctime>
+#include <stdio.h>
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <unistd.h> // for getopt
-#include <ctime>
-#include <stdio.h>
 
 using namespace std;
 
@@ -33,7 +33,7 @@ void printHelp();
 
 int main(int argc, char **argv) {
 
-	float version = 1.00082;
+	float version = 1.000854;
 
 	/*
 	 * Version differences in brief:
@@ -55,6 +55,10 @@ int main(int argc, char **argv) {
 	 *           Reduced internal grid size from 1M cells to 100k cells (RAM from >3GB to 0.45).
 	 *  1.00081: Improved run times by using the agents vector inside of the cells vector for finding the current pop of Infected cells.
 	 *  1.00082: Added in Chemotaxis v2 (and some chemotactic reporting code).
+	 *  1.00083: Minor: Removed some debug code.
+	 *  1.00084: Minor: Allow single-point-of-entry for CTL (center or random point); normalised csv writeout to CTL Add event.
+	 *  1.00085: **IMPORTANT** LAST VERSION ABLE TO RUN ON THE CLUSTER DUE TO KERNEL INCOMPATIBILITIES
+	 *  1.000854: Minor: Several fixes incl. a Chemotaxis v1 erratic printout. xx1-xx4: attempts to get the kernel incompatibility fixed. ND.
 	 *
 	 */
 
@@ -104,8 +108,10 @@ int main(int argc, char **argv) {
 
     cout << "Finished setting up config, the world and GLView." << endl << endl;
 
+    cout << "Checkpoint 1" << endl;
     // Check if we're running in X (useGlut) or command-line mode (!useGlut)
     if (!is->useGlut) {
+    	cout << "Checkpoint 2a" << endl;
 		// Set drawing to false (although this is no longer necessary, as we check is->useGlut before trying to draw)
 		GLVIEW->toggleDrawing();
 		GLVIEW->checkSetup(); // If ok, will set dosimulation to TRUE
@@ -124,19 +130,28 @@ int main(int argc, char **argv) {
 		exit(EXIT_SUCCESS);
 
     } else {
+    	cout << "Checkpoint 2b" << endl;
     	// Print out keys - only relevant if we have visualisation
     	printf("Setup Menu:\n  r=reset view, Esc=quit\n");
         printf("Simulation menu:\n  p=pause, d=drawing on/off (for faster computation), +=faster, -=slower, -->=fast forward to next day\n\n");
     }
 
+    cout << "Checkpoint 3" << endl;
+
 /* GL-related functions */
 #ifndef IMMUNEBOTS_NOGL
     glutInit(&argc, argv); // GLUT will auto-recognise some arguments
+    cout << "Checkpoint 3" << endl;
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH); // GLUT_ALPHA?
+    cout << "Checkpoint 3" << endl;
     glutInitWindowPosition(30,30);
+    cout << "Checkpoint 3" << endl;
     glutInitWindowSize(conf::WWIDTH,conf::WHEIGHT);
+    cout << "Checkpoint 3" << endl;
     int mainwindow = glutCreateWindow("Immunebots");
+    cout << "Checkpoint 4" << endl;
     glewInit();
+    cout << "Checkpoint 5" << endl;
 
     // Initialise and create the Tw menu (only display the setup menu at the start)
 	TwInit(TW_OPENGL, NULL);
@@ -168,6 +183,8 @@ int main(int argc, char **argv) {
 
     TwTerminate();
 #endif // End of IMMUNEBOTS_NOGL
+
+    cout << "Checkpoint FINAL" << endl;
 
     return(EXIT_SUCCESS);
 

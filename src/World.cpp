@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include <unordered_set>
+#include <algorithm>
 
 #ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
@@ -34,6 +35,7 @@ static bool sortEvents( Event first, Event second ) {
 
 World::World( ImmunebotsSetup *is ) {
 	worldtime = 0.0;
+	statstime = 0.0;
 	ibs = is;
 
 	// Generate a unique ID for this world
@@ -163,12 +165,14 @@ void World::update() {
     //  5. Tidy up (remove dead stuff)
 
 	// 0. If time 0, then update stats (should have already been done) and write the report for the first time.
+	if (statstime <= 0.0) { stats->force_refresh = true; statstime = ibs->getParm("report_time", 300);}
 	if (worldtime==0.0) {
 		this->updateStats(true);
 		this->writeReport(true);
+		stats->force_refresh = false;
 	} else if ( stats->force_refresh || ( int(worldtime) % ibs->getParm("update_stats", 300) ) == 0 ) {
 		this->updateStats(false);
-		if ( stats->force_refresh || ( int(worldtime) % ibs->getParm("report_time", 300) ) == 0 ) {
+		if ( stats->force_refresh ) {
 			this->writeReport(false);
 			stats->force_refresh = false;
 		}
@@ -179,6 +183,7 @@ void World::update() {
 	// TODO: The Timestep should be determined by 1/conf::TIMESTEPS# of the the fastest rate
 	float timestep = 1.0;
 	worldtime += timestep;
+	statstime -= timestep;
 
 	// 2. Process events for this timestep in the EventsList
 	int events = checkEvents(worldtime);
@@ -522,6 +527,9 @@ void World::activateEvent(Event *e) {
 			case AbstractAgent::AGENT_CTL:
 				this->dropCTL(number);
 				stats->ctl = stats->ctl + number;
+				// On an Add, reset the stats write-out timing. TODO: Make this configurable in the config file.
+				cout << "--- resetting stats time from " << statstime << " to 0s as CTL have been dropped."<< endl;
+				statstime = 0.0;
 				break;
 			case AbstractAgent::AGENT_SUSCEPTIBLE:
 				cout << "Add susceptible cells doesn't currently work! Fix this!" << endl;
@@ -635,13 +643,36 @@ void World::dropCTL() {
 	dropCTL(number_ctl);
 }
 
+// This is called when placing CTL at the start of a simulation, and when triggered by an event.
 void World::dropCTL(int ctl_number) {
 	int x,y;
-	for (int i=0; i<ctl_number; i++) {
-		x = randi(bounding_min.x,bounding_max.x);
-		y = randi(bounding_min.y,bounding_max.y);
-		addCTL(x, y);
+
+	switch ( ibs->getParm("ctl_placement",0) ) {
+		case 0:
+			// Random location for each CTL
+			x = randi(bounding_min.x,bounding_max.x);
+			y = randi(bounding_min.y,bounding_max.y);
+			break;
+		case 1:
+			// All CTL come out of a randomly chosen single point of entry
+			// First, check if we have set the random entry point
+			if (ibs->getParm("ctl_placement_random",0)==0) {
+				ibs->setParm("ctl_placement_x", randi(bounding_min.x,bounding_max.x));
+				ibs->setParm("ctl_placement_y", randi(bounding_min.y,bounding_max.y));
+				ibs->setParm("ctl_placement_random",1);
+			}
+			x = ibs->getParm("ctl_placement_x",0);
+			y = ibs->getParm("ctl_placement_y",0);
+			break;
+		case 2:
+			// All CTL come out of the center point
+			x = floor((bounding_min.x + bounding_max.x) / 2.0);
+			y = floor((bounding_min.y + bounding_max.y) / 2.0);
+			break;
 	}
+
+	for (int i=0; i<ctl_number; i++) { addCTL(x, y); }
+
 }
 
 // When we clear cells, we need to remove all cells from the iterator, the selectedCell, inFocusCell AND reset the ShadowGrid
@@ -732,7 +763,7 @@ void World::infectCells(int total, bool onlySusceptible) {
 
 	vector<Cell*>::iterator cell;
 
-	random_shuffle(cells.begin(), cells.end());
+	std::random_shuffle(cells.begin(), cells.end());
 
 	cell = cells.begin();
 	while (infectedcount<total && cell != cells.end() ) {
@@ -849,7 +880,8 @@ void World::writeReport(bool firstTime) {
 		logfile << "," << pull1;
 	}
 
-	cout << " -- DEBUG Pull1 is "<<pull1<<endl;
+	//cout << " -- DEBUG Pull1 is "<<pull1<<endl;
+	//cout << "["<<worldtime<<"] -- writing out csv" << endl;
 
 	logfile << endl;
 

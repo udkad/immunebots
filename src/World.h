@@ -126,6 +126,8 @@ public:
 
 private:
 
+    float statstime;
+
 	int UID;
 
     void setInputs(float timestep);

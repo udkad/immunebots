@@ -1,5 +1,9 @@
 == Changelog
 
+Version 1.000854
+Backup date: 2012-05-13
+Switched to freeglut from glut. emoved some debug code. Allow single-point-of-entry for CTL (center or random point); normalised csv writeout to CTL Add event. Several fixes including a Chemotaxis v1 erratic printout. Note: Marked as "broken" in the backup, probably due to kernel incompatibilities between the cluster and dev machines.
+
 Version 1.00082
 Backup date: 2012-03-29
 Added in Chemotaxis v2 (and some chemotactic reporting code). This is the (ultimately unused) vector-based chemotaxis, where the CTL decides in which direction to move based on where the chemotactic signal is strongest.

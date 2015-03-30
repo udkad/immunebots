@@ -9,7 +9,7 @@ using namespace std;
 
 // Statistics struct
 typedef struct {   /* Our stats module - will be updated at an appropriate frequency! */
-	bool force_refresh;					/* How often to update (in world-seconds) */
+	bool force_refresh;					/* If T, updateStats and write out report */
 	/* Cell types */
 	int total_cells;					/* Total number of ALL cells incl. CTL. Dead cells? */
 	int notsusceptible, susceptible, infected, dead;
