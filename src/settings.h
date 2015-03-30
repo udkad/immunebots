@@ -20,7 +20,7 @@ namespace conf {
     const float COLOUR_NOT_SUSCEPTIBLE[4]  = {1,1,1,1}; // white
     const float COLOUR_SUSCEPTIBLE[4]      = {1,1,0,1}; // yellow
     const float COLOUR_INFECTED[4]		   = {0,1,0,1}; // green
-    const float COLOUR_CTL[4]			   = {0,0,1,1}; // blue
+    const float COLOUR_CTL[4]			   = {130.0/255,170.0/255,240.0/255,1}; // lightblue
     const float COLOUR_DEAD[4]			   = {0.2,0.2,0.2,1}; // darkgray (black?)
 
 	/* New configuration variables */

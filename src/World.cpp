@@ -668,6 +668,7 @@ Cell * World::getCell(int x, int y) {
 }
 
 // Finds the nearest Infected cell to the given coords.
+// This is the core of the chemotaxis v1 code.
 Cell * World::getNearestInfectedCell(int x, int y) {
 
 	Cell * closest_cell = 0;
@@ -682,6 +683,34 @@ Cell * World::getNearestInfectedCell(int x, int y) {
 	}
 
 	return(closest_cell);
+}
+
+// This is the core of the chemotaxis v2 code
+Vector2f World::getStrongestInfectedPull( int x0, int y0 ) {
+	// Loop through the Infecteds, get weighted pull from each. Then add up x and y components.
+
+	float tx=0.0, ty=0.0, d=0.0;
+	Vector2f R = Vector2f(0.0f,0.0f);
+	// Step through the entire cells vector - ignore uninfected and dead cells
+	for (int i=0; i<(int)cells.size(); i++) {
+		if ( cells[i]->agent_type == AbstractAgent::AGENT_INFECTED || cells[i]->agent_type == AbstractAgent::AGENT_INFECTED_NOVIRIONS ) {
+
+			tx = cells[i]->pos.x - x0;
+			ty = cells[i]->pos.y - y0;
+			// Work out the distance from the cell, but avoid divide by 0 errors.
+			if ( x0 == tx && y0 == ty ) {
+				d = 1e-9;
+			} else {
+				d = pow(tx,2) + pow(ty,2);
+			}
+
+			// Weigh each component and add to the R vector
+			R.x += tx/d;
+			R.y += ty/d;
+		}
+	}
+	return(R);
+
 }
 
 // If we click on a non-susceptible or susceptible cell, we infect it
@@ -726,6 +755,8 @@ void World::infectCells(int total, bool onlySusceptible) {
 void World::writeReport(bool firstTime) {
 
 	//cout << "   - writeReport also called ["<<worldtime<<"s]"<<endl;
+	// Temp var for the pull on the 1st CTL (only used if getParm("stats_ctl_r",1)==1)
+	float pull1 = -1.0f;
 
 	// Bit nasty and inelegant having this code here, but it's only needed when we write out to csv.
 	if ( ibs->getParm("stats_extra",0) ) {
@@ -741,8 +772,14 @@ void World::writeReport(bool firstTime) {
 			vector<AbstractAgent*>::iterator agent;
 			for ( agent = agents.begin(); agent != agents.end(); ++agent) {
 				if ( ((AbstractAgent*)(*agent))->getAgentType() == AbstractAgent::AGENT_CTL ) {
-				// Work out the fraction of time each CTL spent in each of the 3 states.
+					// Work out the fraction of time each CTL spent in each of the 3 states.
+
 					((CTL*)(*agent))->getStateFraction( ctlsfull );
+
+					// We just want the first CTL
+					if (pull1==-1) {
+						pull1 = ((CTL*)(*agent))->pull;
+					}
 				}
 			}
 
@@ -763,6 +800,7 @@ void World::writeReport(bool firstTime) {
 
 	char buffer[255];
 	// TODO: Check that logs/ exist
+	// TODO: Some timing tests to see how much time sprinting wastes. Try a 'memory cache' which writes out 10 lines at a time?
 	sprintf(buffer, "%s/%s.csv", ibs->reportdir.c_str(), ibs->reportfilename.c_str());
 
 	ofstream logfile;
@@ -789,6 +827,10 @@ void World::writeReport(bool firstTime) {
 			// Add any other stats output headers to the logfile
 			logfile << ",scan_avg,ctl_sm,ctl_ss,ctl_sl";
 		}
+		if (ibs->getParm("stats_ctl_r",0)) {
+			// Add any other stats output headers to the logfile
+			logfile << ",ctl1_r";
+		}
 		logfile << endl;
 	} else {
 		// Just open the (pre-existing) file for appending.
@@ -802,6 +844,13 @@ void World::writeReport(bool firstTime) {
 		logfile << "," << stats->scan_average;
 		for (int i=0; i<CTL::STATE_MAX;i++) logfile << "," << stats->ctlsf[i];
 	}
+	if (ibs->getParm("stats_ctl_r",0)) {
+		// Add the current r of the CTL
+		logfile << "," << pull1;
+	}
+
+	cout << " -- DEBUG Pull1 is "<<pull1<<endl;
+
 	logfile << endl;
 
 	logfile.close();

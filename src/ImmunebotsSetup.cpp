@@ -42,12 +42,11 @@ ImmunebotsSetup::ImmunebotsSetup() {
 
     // Legacy defaults:
     parameters["ctl_immediatekill"] = 0.0; // CTL kill immediately after scanning; keyword is: CTL LYSIS [start|end].
+	parameters["ctl_chemotaxis_version"] = 0.0; // default to chemotaxis version 0, i.e. no chemotaxis (same as v1&&0%). For v2 set rho via ctl_chemotaxis_pc.
 
     // Initial starting dimensions of the world.
     parameters["WIDTH"]  = conf::DefaultWidth;
     parameters["HEIGHT"] = conf::DefaultHeight;
-
-    // For CTL fractional information?
 }
 
 void ImmunebotsSetup::setWorld(World * w) {
@@ -104,6 +103,9 @@ void ImmunebotsSetup::processSetupFile() {
 				if (boost::iequals(value, "extra")) {
 					cout << " - turning on extra stats output" << endl;
 					setParm("stats_extra", 1);
+				} else if (boost::iequals(value, "ctl_r")) {
+					cout << " - turning on extra stats output for CTL (chemotaxis v2 only)" << endl;
+					setParm("stats_ctl_r", 1);
 				}
 			} else if (boost::iequals(keyword, "layoutfile")) {
 				layoutfilename = value;
@@ -209,12 +211,11 @@ void ImmunebotsSetup::processSetupFile() {
 					}
 
 				} else if ( boost::iequals(pname,"CHEMOTAXIS_PC") ) {
-					// If any chemotaxis percentage over 0, then set ctl_chemotaxis.
+					// If any chemotaxis percentage over 0, then later we set ctl_chemotaxis.
 					setParm( string("ctl_chemotaxis_pc"), pval );
-					if ( getParm( "ctl_chemotaxis_pc", 0.05f ) > 0.0 ) {
-						setParm( string("ctl_chemotaxis"), 1 );
-					}
-
+				}  else if ( boost::iequals(pname,"CHEMOTAXIS_V") ) {
+					// Default is chemotaxis version 0 (i.e. no chemot)
+					setParm( string("ctl_chemotaxis_version"), pval );
 				} else if (boost::iequals(keyword, "Nonsusceptible")) {
 					setParm( string("nc_").append(pname), pval );
 				} else if (boost::iequals(keyword, "Susceptible")) {
@@ -234,6 +235,13 @@ void ImmunebotsSetup::processSetupFile() {
 			cout << "WARNING: Unrecognised line in setupfile (ignoring..): " << line << endl;
 		}
 	}
+
+	// Finished looping through the setup file. Do some cleanup now.
+
+	// Chemotaxis cleanup: set ctl_chemotaxis if v1&pc>0 or v2
+	if ( (getParm("ctl_chemotaxis_version",0)==1 && getParm("ctl_chemotaxis_pc",0.0f)> 0.0) || getParm("ctl_chemotaxis_version",0)==2 ) {
+		setParm("ctl_chemotaxis",1);
+	} else { setParm("ctl_chemotaxis",0); }
 
 	// Finished with setup, so do stats
 	world->updateStatsFull();

@@ -42,6 +42,8 @@ public:
 	void getStateFraction( vector< vector<float> >& );
 	void printInfo();
 
+	float pull;
+
 private:
 
 	void init(ImmunebotsSetup*);
@@ -52,6 +54,10 @@ private:
 	Cell *nearestCell;
 	float timer;
 	float cellshadow[9][2];
+	int chemotaxis_type;
+
+	// Temporary variable which colours the CTL differently depending on the current direction mode.
+	int chemo_state;
 
 	// Time spent in each state
 	float timekeeper[STATE_MAX];

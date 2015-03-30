@@ -62,6 +62,11 @@ void CTL::init(ImmunebotsSetup * ibs) {
     // Also, there should only be one such vector per radius value, rather than one vector per CTL.
 
     for (int i=0; i<STATE_MAX; i++) { timekeeper[i] = 0.0f; }
+
+    // Set chemotaxis type:- 0:none, 1:v1 (GPS-style; chemo%) or 2:v2 (pseudo-cell based on inverse distance from CTL; rho parm [0..1])
+    chemotaxis_type = ibs->getParm("ctl_chemotaxis_version",0);
+    chemo_state = 0;
+    pull = 0.0f;
 }
 
 CTL::~CTL() {
@@ -79,6 +84,11 @@ void CTL::drawAgent(GLView * v) {
 
 	// 1. Draw the body (simple circle)
     glColor4f(conf::COLOUR_CTL[0],conf::COLOUR_CTL[1],conf::COLOUR_CTL[2], 1.0);
+    if (chemo_state==1) {
+    	glColor4f(0,0,1, 1.0);
+    } else if (chemo_state==2) {
+    	glColor4f(0,0,1, 1.0);
+    }
     v->drawCircle(pos.x, pos.y, draw_priority, radius, false);
 
     // 2. [TEMP] Draw line from CTL to nearest infected cell
@@ -86,6 +96,15 @@ void CTL::drawAgent(GLView * v) {
     	glBegin(GL_LINES);
     	glColor3f(0,0,1);
     	glVertex2f(nearestCell->pos.x,nearestCell->pos.y);
+    	glVertex2f(pos.x, pos.y);
+    	glEnd();
+    }
+
+    if (chemo_state == 2) {
+    	glBegin(GL_LINES);
+    	glColor3f(0,0,1);
+    	// Get angle from pseudo, and make a 5um line (distance is irrelevant)
+    	glVertex2f(15.0 * cos(angle)+pos.x,15.0 * sin(angle)+pos.y);
     	glVertex2f(pos.x, pos.y);
     	glEnd();
     }
@@ -192,21 +211,44 @@ void CTL::setInput(float dt, World * w) {
 
 float CTL::getAngle(World *w) {
 
-	float newangle = 0.0;
+	// This is the default angle (no bias).
+	float newangle = angle + randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
+	chemo_state = 0;
 
-	if ( w->ibs->getParm("ctl_chemotaxis", 0) && randf(0.0f, 1.0f) < w->ibs->getParm("ctl_chemotaxis_pc", 0.05f) ) {
-		// Choose a trajectory which will hit the nearest infected cell
-		// TODO: Limit the chemotaxis scan radius [optional]
+	// Check if we need to do chemotaxis at all. A switch would be easier to read..
+	if ( chemotaxis_type ) {
 
-		nearestCell = w->getNearestInfectedCell(pos.x, pos.y);
-		if (nearestCell!=0) {
-			// Set angle based on position of nearest cell: tan0 = o/a.
-			newangle = atan2( nearestCell->pos.y - pos.y, nearestCell->pos.x - pos.x );
+		// Chemotaxis version 1
+		if ( chemotaxis_type==1 && randf(0.0f, 1.0f) < w->ibs->getParm("ctl_chemotaxis_pc", 0.05f) ) {
+			// Choose a trajectory which will hit the nearest infected cell
+			// TODO: Limit the chemotaxis scan radius
+
+			nearestCell = w->getNearestInfectedCell(pos.x, pos.y);
+			if (nearestCell!=0) {
+				// Set angle based on position of nearest cell: sin0=o/h
+				//newangle = atan2( pos.y, pos.x ) - atan2( nearestCell->pos.y, nearestCell->pos.x );
+				newangle = atan2( nearestCell->pos.y - pos.y, nearestCell->pos.x - pos.x );
+				chemo_state = 1;
+
+				//cout << "[DEBUG-CTL] ctl_x "<<pos.x<<"; target_x="<<nearestCell->pos.x<<"; chemotactic-angle set as: " << angle * 180/M_PI << endl;
+			}
+		// Chemotaxis version 2
+		} else if ( chemotaxis_type==2 ) {
+			// The entire chemotaxis v2 code goes here:
+			Vector2f pseudoCell = w->getStrongestInfectedPull( pos.x, pos.y );
+			// Find pull towards this pseudo cell
+			pull = sqrt( pow(pseudoCell.x,2) + pow(pseudoCell.y,2) );
+			// Debug statement:
+			if ( randf(0.0f, 1.0f) < (pull/(w->ibs->getParm("ctl_chemotaxis_pc",0.05f)+pull)) ) {
+				newangle = atan2( pseudoCell.y, pseudoCell.x );
+				chemo_state = 2;
+			}
+
+		} else {
+			printf(" **ERROR** Unknown chemotaxis value (%i). Performance may be erratic.\n", chemotaxis_type);
 		}
 
-	} else {
-		newangle = angle + randf(0.0, w->ibs->getParm("ctl_turnangle",0.25f)*2.0*M_PI ) - w->ibs->getParm("ctl_turnangle",0.25f)*M_PI;
-	}
+	} // else do nothing (random direction already set
 
 	return(newangle);
 }

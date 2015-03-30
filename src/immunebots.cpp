@@ -33,27 +33,28 @@ void printHelp();
 
 int main(int argc, char **argv) {
 
-	float version = 1.00081;
+	float version = 1.00082;
 
 	/*
 	 * Version differences in brief:
 	 *
-	 *  1.0001: First "mature" release.
-	 *  1.0002: Support for compiler directives for NO_SERIALISATION and NO_GL (i.e. headless run).
-	 *  		Also static linking to the boost libraries (default).
-	 *  1.0003: Addition of the EventsList, i.e. adding of CTL at ratio E:T at a future time.
-	 *  1.0004: Random seed taken from /dev/urandom [linux only] instead of time(0).
-	 *  1.0005: Added new Event ('Event AddWhen 10CTL@100Infected' => "Add 10 CTL When Infected == 100").
-	 *  		Rewrote the update stats and write_report code.
-	 *  1.0006: Added new Event ('Event EndAfter 10Infected@100Infected' => "End when Infected count reaches 10 from 100").
-	 *  		Now quits with error if trying to place more cells than the world defaults permit.
-	 *  1.0007: New End Condition ('Event End 3d@1000Infected' => "End 3 days after Infected count reached 1000").
-	 *  		CTL now log how much time they spend in each state (move, scan, lyse) if stats_extra is enabled.
-	 *   		Minor corrections to the CTL code.
-	 *  1.0008: Added in simple chemotaxis (after every persistence length of movement, there is a configurable chance than
-	 *            the CTL will move in the direction of the nearest infected cell).
-	 *          Reduced internal grid size from 1M cells to 100k cells (RAM from >3GB to 0.45).
+	 *  1.0001:  First "mature" release.
+	 *  1.0002:  Support for compiler directives for NO_SERIALISATION and NO_GL (i.e. headless run).
+	 *  		 Also static linking to the boost libraries (default).
+	 *  1.0003:  Addition of the EventsList, i.e. adding of CTL at ratio E:T at a future time.
+	 *  1.0004:  Random seed taken from /dev/urandom [linux only] instead of time(0).
+	 *  1.0005:  Added new Event ('Event AddWhen 10CTL@100Infected' => "Add 10 CTL When Infected == 100").
+	 *  		 Rewrote the update stats and write_report code.
+	 *  1.0006:  Added new Event ('Event EndAfter 10Infected@100Infected' => "End when Infected count reaches 10 from 100").
+	 *  		 Now quits with error if trying to place more cells than the world defaults permit.
+	 *  1.0007:  New End Condition ('Event End 3d@1000Infected' => "End 3 days after Infected count reached 1000").
+	 *  		 CTL now log how much time they spend in each state (move, scan, lyse) if stats_extra is enabled.
+	 *   		 Minor corrections to the CTL code.
+	 *  1.0008:  Added in simple chemotaxis (after every persistence length of movement, there is a configurable chance than
+	 *             the CTL will move in the direction of the nearest infected cell).
+	 *           Reduced internal grid size from 1M cells to 100k cells (RAM from >3GB to 0.45).
 	 *  1.00081: Improved run times by using the agents vector inside of the cells vector for finding the current pop of Infected cells.
+	 *  1.00082: Added in Chemotaxis v2 (and some chemotactic reporting code).
 	 *
 	 */
 

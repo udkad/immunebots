@@ -1,5 +1,9 @@
 == Changelog
 
+Version 1.00082
+Backup date: 2012-03-29
+Added in Chemotaxis v2 (and some chemotactic reporting code). This is the (ultimately unused) vector-based chemotaxis, where the CTL decides in which direction to move based on where the chemotactic signal is strongest.
+
 Version 1.00081
 Backup date: 2012-03-20
 Major update. Added in simple chemotaxis (after every persistence length of movement, there is a configurable chance than the CTL will move in the direction of the nearest infected cell). Reduced internal grid size from 1M cells to 100k cells (RAM from >3GB to 0.45). Improved run times by using the agents vector inside of the cells vector for finding the current pop of Infected cells.
