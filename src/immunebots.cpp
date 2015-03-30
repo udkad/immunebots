@@ -33,7 +33,7 @@ void printHelp();
 
 int main(int argc, char **argv) {
 
-	float version = 1.0001;
+	float version = 1.0002;
 
 
 	cout <<"  _                                            _             _        " << endl;

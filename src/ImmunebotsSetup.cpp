@@ -86,6 +86,10 @@ void ImmunebotsSetup::processSetupFile() {
 				}
 			} else if (boost::iequals(keyword, "endtime")) {
 				setEndTime(value.c_str());
+			} else if (boost::iequals(keyword, "Stats")) {
+				if (boost::iequals(value, "extra")) {
+					setParm("stats_extra", 1);
+				}
 			} else if (boost::iequals(keyword, "layoutfile")) {
 				layoutfilename = value;
 			} else if (boost::iequals(keyword, "reporttime")) {
@@ -152,7 +156,7 @@ void ImmunebotsSetup::processSetupFile() {
 					} // else ignore other 'type' variables
 				} else if ( boost::iequals(pname,"BOUNDARY") ) {
 					// Catch the Boundary behaviours: wrap, stay, bounce, torus.
-					int boundary;
+					int boundary = AbstractAgent::BOUNDARY_NONE;
 
 					if (boost::iequals(pval,"none")) {
 						boundary = AbstractAgent::BOUNDARY_NONE;

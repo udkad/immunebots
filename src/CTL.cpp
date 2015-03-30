@@ -5,13 +5,16 @@
  *      Author: ulrich
  */
 
+
 #include "CTL.h"
 #include "Cell.h"
 
 // If we don't have an explicit list of CTL (as they're stored in the AbstractAgent pointer list, agents),
 // then we need to explicitly export the CTL class.
 // c.f. Infected cells, which are AbstractAgent->Cells but stored in the Cells pointer list, cells.
+#ifndef IMMUNEBOTS_NOSERIALISATION
 BOOST_CLASS_EXPORT_GUID(CTL, "CTL");
+#endif
 
 // Don't call this
 CTL::CTL() { }
@@ -34,8 +37,6 @@ void CTL::init(ImmunebotsSetup * ibs) {
     currentCell = 0;
     lastCell = 0;
 
-    // Rates (in secs)
-
     active = true;
     lifespan = 0.0;
     timer = 0.0;
@@ -43,6 +44,22 @@ void CTL::init(ImmunebotsSetup * ibs) {
 
     drawable = true;
     draw_priority = 0.8; // high priority
+
+    // Initialise the CTL area checker (note: radius is currently hardcoded as 5, but this might change in the future)
+    float halfsinr = sqrt(0.5) * radius;
+
+    float cellshadowinit[9][2] = {
+    	{0,0},
+    	{0,-radius}, {+halfsinr,-halfsinr},
+    	{+radius,0}, {+halfsinr,+halfsinr},
+    	{0,+radius}, {-halfsinr,+halfsinr},
+    	{-radius,0}, {-halfsinr,-halfsinr}
+	};
+
+    memcpy( cellshadow, cellshadowinit, sizeof(cellshadowinit) );
+    // How Very C! Probably should use a nested vector.
+    // Also, there shoudl only be one such vector per radius value, rather than one vector per CTL.
+
 }
 
 CTL::~CTL() {
@@ -82,9 +99,19 @@ void CTL::setInput(float dt, World * w) {
 	lifespan += dt;
 
 	// Is the CTL over a cell?
-	if ( w->isOverCell(pos.x, pos.y) ) {
-		currentCell = w->getCell(pos.x, pos.y);
+
+	// New Code
+	for (int i=0; i<8; i++) {
+		if ( w->isOverCell(pos.x+cellshadow[i][0], pos.y+cellshadow[i][1]) ) {
+			currentCell = w->getCell(pos.x+cellshadow[i][0], pos.y+cellshadow[i][1]);
+			break;
+		}
 	}
+
+	// Old Code
+	//if ( w->isOverCell(pos.x, pos.y) ) {
+	//	currentCell = w->getCell(pos.x, pos.y);
+	//}
 
 	if ( currentCell == 0 && state != STATE_MOVE ) {
 		cout << this << "CTL ERROR: Not on a cell but state is sense or kill ("<< state<< ")\n";
@@ -97,7 +124,7 @@ void CTL::setInput(float dt, World * w) {
 		// If we're over a new cell, then "sense" it
 		if (currentCell!=0 && currentCell!=lastCell) {
 			state = STATE_SENSE;
-			timer = w->ibs->getParm("t_ctlscantime",25.0f); // 25s-60s for sensing this cell
+			timer = w->ibs->getParm("t_ctlscan",25.0f); // 25s-60s for sensing this cell
 		}
 
 	} else if ( state == STATE_SENSE ) {
@@ -118,6 +145,7 @@ void CTL::setInput(float dt, World * w) {
 				timer = getPersistenceLength(w);
 				lastCell = currentCell;
 				currentCell = 0;
+				w->EventReporter(World::EVENT_CTL_SCANCOMPLETE);
 			}
 		} // else do nothing.. just let timer tick down
 	} else if ( state == STATE_KILL ) {

@@ -18,7 +18,9 @@
 
 using namespace std;
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 BOOST_CLASS_EXPORT_GUID(Cell, "Cell");
+#endif
 
 // Don't use this..
 Cell::Cell() {}

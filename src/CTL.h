@@ -13,9 +13,11 @@
 #include "AbstractAgent.h"
 #include "ImmunebotsSetup.h"
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/export.hpp>
+#endif
 
 static const int STATE_MOVE  = 0;
 static const int STATE_SENSE = 1;
@@ -42,10 +44,12 @@ private:
 	Cell *currentCell;
 	Cell *lastCell;
 	float timer;
+	float cellshadow[9][2];
 
 	/* Helper functions */
 	float getPersistenceLength(World *); // returns a persistence length between (4.0,6.0)
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 	// For serialisation:
     friend class boost::serialization::access;
     template<class Archive>
@@ -67,6 +71,7 @@ private:
         ar & timer;
 
     }
+#endif
 
 };
 

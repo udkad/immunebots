@@ -18,8 +18,10 @@
 #include <iostream>
 #include <GL/glut.h> // Required for the drawing utilities
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
+#endif
 
 #include "World.h"
 #include "GLView.h"
@@ -81,13 +83,17 @@ public:
 
 private:
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 	// For serialisation:
     friend class boost::serialization::access;
     template<class Archive>
     void serialize(Archive & ar, const unsigned int version) {}
+#endif
 
 };
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 BOOST_SERIALIZATION_ASSUME_ABSTRACT(AbstractAgent);
+#endif
 
 #endif /* ABSTRACTAGENT_H_ */

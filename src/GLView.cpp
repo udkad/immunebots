@@ -376,6 +376,7 @@ void GLView::createStatsMenu(bool visible) {
 	TwAddVarRO(barst, "event_infectedlysis",   TW_TYPE_INT32, (&stats->infected_lysis),   " label='CTL lysis' group='Events' " );
 	TwAddVarRO(barst, "event_infecteddeath",   TW_TYPE_INT32, (&stats->infected_death),   " label='Virus-induced cell death' group='Events' " );
 	TwAddVarRO(barst, "event_failedinfection", TW_TYPE_INT32, (&stats->failed_infection), " label='Failed infections' group='Events' " );
+	TwAddVarRO(barst, "event_ctlscan",         TW_TYPE_FLOAT, (&stats->scan_average), " label='Average # cells scanned (cells/min)' group='Events' " );
 
 	/* Area */
 	TwAddVarRO(barst, "bounding_box_area", TW_TYPE_FLOAT, (&stats->area_mm2),  " label='Bounding box (mm^2)' group='Area' " );

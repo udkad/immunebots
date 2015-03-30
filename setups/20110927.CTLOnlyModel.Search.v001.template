@@ -17,14 +17,13 @@
 ##     Note: simulation will also end if there are no more agents and may be overriden on the command line.
 ## - LayoutFile <filename>: should contain patch data, may contain non-susceptible cells, may contain
 ## - PlaceCells {true,false}: if true will wipe any existing cells (incl. CTL?) from the layout and replace them with non-susceptible cells.
-RunID		Samplerun2011-04-22.001
-EndCondition	endtime		6d	# ok-ok
-EndCondition	infectedpc_ge	0.6	# ok-ok
-#EndCondition	infectedpc_eq	0.0	# ok-ok
+RunID		20110927.CTLOnlyModel.Search.v001
+EndCondition	endtime		60m	# ok-ok
 ReportDir	logs			# ok-ok
 ReportName	fromid			# ok-ok (sets csv filename to id ('fromid'), else to whatever the field is. ID must be set first.)
-ReportTime	60			# ok-ok (write out new report every x seconds)
+ReportTime	1			# ok-ok (write out new report every x seconds)
 ReportOverwrite	1			# ok-ok
+Stats		extra			# ok-ok
 
 ###########################
 #    P L A C E M E N T    #
@@ -35,14 +34,14 @@ ReportOverwrite	1			# ok-ok
 Nonsusceptible	TOTALCOUNT	10000		# ok-ok
 Nonsusceptible	CELLSPACING	5		# ok-ok
 Nonsusceptible 	PLACEMENT	squaregrid	# ok-ok
-Nonsusceptible	SUSCEPTIBLEPC	25		# ok-ok
+Nonsusceptible	SUSCEPTIBLEPC	0		# ok-ok
 Susceptible	PLACEMENT	random		# ok-ignored (always random)
-Infected	TOTALCOUNT	1		# ok-ok
+Infected	TOTALCOUNT	0		# ok-ok
 Infected	TYPE		virions		# ok-ok
 CTL		PLACEMENT	random		# ok-ignored (always random)
-CTL		TOTALCOUNT	25		# ok-ok
-CTL		BOUNDARY	bounce
-#Virion		BOUNDARY	bounce
+CTL		TOTALCOUNT	100		# ok-ok
+CTL		BOUNDARY	wrap		# ok-ok
+
 
 ###########################
 #        R A T E S        #
@@ -53,19 +52,13 @@ CTL		BOUNDARY	bounce
 #  - Susceptible: none
 #  - Infected: r_vproduction (v/s), r_ideath (/s)
 #  - Virion: r_vinfect (/s), r_vspeed (um/s)
-#  - CTL: r_ctlspeed
-Rate	r_ideath	0.000005787 	# = 1/2*1/(24*60*60) // Infected cell death rate: Half life of approx 2 days.
+#  - CTL: r_ctlspeed, r_ctlpersist, t_ctlscan, t_ctlhandle_minus, t_ctlhandle_plus
 
-Rate	r_vproduction	0.0023		# = 200 * 1/(24*60*60) // 200 virions per day
-Rate	r_vinfect	0.00005		# arbitrary value
-Rate	r_vspeed	0.1		# arbitrary value
-
-Rate	r_ctlspeed	1.0		# arbitrary value (could be 0-10um/min? Check Graw2009)
+Rate	r_ctlspeed	1.1666		# Equivalent to 10um/min (0.1666). From Graw2009.
 Rate	r_ctlpersist	5.0		# persistence length of radius*w-5um
-Time 	t_ctlscan	25.0		# 25-60s for sensing cells
-Time 	t_ctlhandle	30.0		# About 30 mins
-Time 	t_ctlhandle_minus	-5.0	# .. minus 5 mins to kill
-Time 	t_ctlhandle_plus	50	# .. plus 5 mins
+Time 	t_ctlscan	10.0		# 25-60s for sensing cells. Will be varied.
+
+# Note: No virions or infected cells, so no need for virion production rates or CTL handle times.
 
 ###########################
 #     C O M M A N D S     #

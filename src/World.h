@@ -7,8 +7,11 @@
 
 #include <vector>
 #include <string>
+
+#ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
+#endif
 
 using namespace std;
 
@@ -23,9 +26,10 @@ class World {
 public:
 
 	// Events
-	const static int EVENT_INFECTEDDEATH_LYSIS = 1;
-	const static int EVENT_INFECTEDDEATH_VIRUS = 2;
-	const static int EVENT_FAILEDINFECTION	   = 3;
+	const static int EVENT_INFECTEDDEATH_LYSIS 	= 1;
+	const static int EVENT_INFECTEDDEATH_VIRUS 	= 2;
+	const static int EVENT_FAILEDINFECTION	   	= 3;
+	const static int EVENT_CTL_SCANCOMPLETE		= 4;
 
     World();
     ~World();
@@ -132,6 +136,7 @@ private:
 
     bool isNearPatch(int x, int y);
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 	// For serialisation: We're only interested in the cells and patch vectors, and the bounding min/max.
     friend class boost::serialization::access;
     template<class Archive>
@@ -142,6 +147,7 @@ private:
         ar & bounding_min;
         ar & agents;
     }
+#endif
 
 };
 

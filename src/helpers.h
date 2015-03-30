@@ -2,7 +2,9 @@
 #define HELPERS_H
 #include <stdlib.h>
 #include <math.h>
+#include <vector>
 
+using namespace std;
 
 typedef struct {   /* Our stats module - gets updated every second */
 	int total_cells;					/* Total number of ALL cells incl. CTL  */
@@ -15,9 +17,14 @@ typedef struct {   /* Our stats module - gets updated every second */
 	float area_mm2;					/* area (in um) of the bounding box SANS margin */
 	float cell_area;
 	char infected_str[255];
-	/*Events*/
+	/* Events */
 	int infected_death, infected_lysis;	/* Death by virus-induced cytotoxicity or CTL lysis */
 	int failed_infection;	/* Triggered when a virion goes over a cell but doesn't infect */
+	/* Events: Average cells scanned by CTL each minute */
+	int scan_complete;
+	std::vector<int> scan;
+	int lastCalled;
+	float scan_average;
 } Statistics;
 
 //uniform random in [a,b)

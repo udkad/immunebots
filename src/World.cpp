@@ -7,9 +7,11 @@
 #include <string>
 #include <unordered_set>
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/vector.hpp>
+#endif
 
 #include "settings.h"
 #include "helpers.h"
@@ -48,11 +50,13 @@ World::World(  ) {
 
     // Create the statistics module
 	stats = (Statistics*) malloc( sizeof( Statistics ) );
+	stats->scan.reserve(5);
 	updateStats(true);
 
     // Initialise the boundary box (to very wrong numbers)
     resetBoundingBox();
-}
+
+ }
 
 void World::setImmunebotsSetup(ImmunebotsSetup* is) {
 	ibs = is;
@@ -186,6 +190,9 @@ void World::EventReporter(int event_type) {
 			break;
 		case EVENT_FAILEDINFECTION:
 			stats->failed_infection++;
+			break;
+		case EVENT_CTL_SCANCOMPLETE:
+			stats->scan_complete++;
 			break;
 
 		default: break;
@@ -521,14 +528,25 @@ void World::writeReport(bool firstTime) {
 		// Open file normally (will overwrite everything)
 		logfile.open(buffer);
 		// Write out the header
-		logfile << "time,susceptible,infected,dead,virions,ctl\n";
+		logfile << "time,susceptible,infected,dead,virions,ctl";
+		if (ibs->getParm("stats_extra",0)) {
+			// Add any other stats output headers to the logfile
+			logfile << ",scan_avg";
+		}
+		logfile << endl;
 	} else {
 		// Just open the (pre-existing) file for appending.
 		logfile.open(buffer, fstream::app);
 	}
 
 	// Write-out the stats (currently write out everything)
-	logfile << worldtime <<","<< stats->susceptible <<","<< stats->infected <<","<< stats->dead <<","<< stats->virion <<","<< stats->ctl << "\n";
+	logfile << worldtime <<","<< stats->susceptible <<","<< stats->infected <<","<< stats->dead <<","<< stats->virion <<","<< stats->ctl;
+	if ( ibs->getParm("stats_extra",0) ) {
+		// Add any other stats output headers to the logfile
+		logfile << "," << stats->scan_average;
+	}
+	logfile << endl;
+
 	logfile.close();
 
 }
@@ -640,6 +658,11 @@ int World::numCells() const {
 // TODO: Check if we overwrite an existing file
 void World::saveLayout() {
 
+#ifdef IMMUNEBOTS_NOSERIALISATION
+	cout << "WARNING: Tried to save layout, but boost::serialisation has been removed. Ignoring." << endl;
+#endif
+
+#ifndef IMMUNEBOTS_NOSERIALISATION
 	ofstream setupfile(ibs->layoutfilename);
 	if (!setupfile.good()) {
 		cout << "ERROR: Could not make setup file '"<< ibs->layoutfilename <<"'; setup save failed.\n";
@@ -670,7 +693,7 @@ void World::saveLayout() {
 		boost::archive::text_oarchive oa(setupfile);
 		oa << (*this);
     } 	// archive and stream closed when destructors are called
-
+#endif
 
 }
 
@@ -678,6 +701,11 @@ void World::saveLayout() {
 // Note: probably unecessary to pass in the view pointer, as view *calls* this function.
 void World::loadLayout() {
 
+#ifdef IMMUNEBOTS_NOSERIALISATION
+	cout << "WARNING: Tried to load layout, but boost::serialisation has been removed. Ignoring." << endl;
+#endif
+
+#ifndef IMMUNEBOTS_NOSERIALISATION
 	// Create a link to the setup file and read it the contents
 	string fn = ibs->layoutfilename;
 	ifstream setupfile(fn);
@@ -715,7 +743,7 @@ void World::loadLayout() {
 
 	worldtime = 0.0;
 	this->updateStats(true);
-
+#endif
 }
 
 void World::updateStats(bool resetEvents) {
@@ -725,6 +753,10 @@ void World::updateStats(bool resetEvents) {
 	if (resetEvents) {
 		stats->infected_death = 0;
 		stats->infected_lysis = 0;
+		stats->scan_complete  = 0;
+		stats->scan_average   = 0.0;
+		stats->lastCalled     = worldtime;
+		stats->scan.assign(5,-1);
 	}
 
 	// Update the cell-related stats
@@ -761,6 +793,36 @@ void World::updateStats(bool resetEvents) {
 				break;
 			default: break;
 		}
+	}
+
+	// Every time update is called, calculate the avg cell scan rate per ctl. Smooth over reporting period * 5.
+	// Limit this to once every minute, at least!
+	if ( stats->lastCalled + 60 <= worldtime ) {
+		int fiveminscan = 0; int fivemindiv = 1;
+		for (int i=4; i>0; i--) {
+			stats->scan[i] = stats->scan[i-1];
+			if (stats->scan[i]>=0) {
+				fivemindiv++;
+				fiveminscan += stats->scan[i];
+			}
+		}
+		stats->scan[0] = stats->scan_complete;
+		fiveminscan += stats->scan_complete;
+		//cout << "[DEBUG:"<<worldtime<<"] For this reporting interval, "<< stats->scan_complete << " cells were scanned (";
+		stats->scan_complete = 0;
+		// Now calculate the (reporting_time*5) smoothed average
+		stats->scan_average = fiveminscan / fivemindiv;
+
+		// Calculate the average number of cells scanned every minute, reset every 5 mins.
+		if ( ctl == 0 ) {
+			stats->scan_average = 0;
+		} else {
+			stats->scan_average = stats->scan_average * 60 / (worldtime - stats->lastCalled) / ctl;
+		}
+
+		//cout << stats->scan_average << " cells/min/ctl)"<< endl;
+
+		stats->lastCalled = worldtime;
 	}
 
 	// Update the absolute cell/virion numbers

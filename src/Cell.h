@@ -16,9 +16,11 @@
 #include <vector>
 #include <string>
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/export.hpp>
+#endif
 
 class GLView;
 
@@ -59,6 +61,7 @@ private:
 	float r_vproduction; // Rate of virion production
 	float r_death; // Infected cell death rate
 
+#ifndef IMMUNEBOTS_NOSERIALISATION
 	// For serialisation:
     friend class boost::serialization::access;
     template<class Archive>
@@ -76,7 +79,7 @@ private:
         ar & lifespan;
 
     }
-
+#endif
 
 };
 
